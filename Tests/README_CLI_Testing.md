@@ -6,7 +6,7 @@
 
 - Unity Editor 已安裝（透過 Unity Hub）
 - PowerShell 5.0 或更高版本
-- 專案路徑：`d:\unity\Test`
+- **專案路徑會自動偵測**：腳本會從所在位置向上尋找包含 `Assets` 資料夾的 Unity 專案根目錄
 
 ## 測試腳本說明
 
@@ -16,23 +16,28 @@
 
 用於在 Unity 批次模式下執行所有單元測試並生成測試報告。
 
-**位置**：`d:\unity\Test\Assets\MethodInvoker\RunTests.ps1`
+**名稱**：`RunTests.ps1`
 
 **使用方法**：
 ```powershell
-cd "d:\unity\Test\Assets\MethodInvoker"
+# 從 Method Invoker 工具所在目錄執行
+cd "專案路徑\Assets\Method-Invoker-Unity"
 .\RunTests.ps1
+
+# 或從任何包含此腳本的目錄執行（會自動偵測專案路徑）
+powershell -ExecutionPolicy Bypass -File .\RunTests.ps1
 ```
 
 **功能**：
+- **自動偵測 Unity 專案路徑**（向上尋找包含 Assets 資料夾的目錄）
 - 自動尋找 Unity Editor 執行檔
 - 以批次模式運行 EditMode 測試
 - 生成 `TestResults.xml` 測試報告（位於專案根目錄）
 - 生成 `TestRun.log` 詳細日誌
 
 **輸出檔案**：
-- `d:\unity\Test\TestResults.xml` - NUnit 格式的測試結果
-- `d:\unity\Test\Assets\MethodInvoker\TestRun.log` - Unity 執行日誌
+- `{專案根目錄}\TestResults.xml` - NUnit 格式的測試結果
+- `{專案根目錄}\TestRun.log` - Unity 執行日誌
 
 ### 2. CompileCheck.ps1 - 編譯檢查
 
@@ -42,11 +47,16 @@ cd "d:\unity\Test\Assets\MethodInvoker"
 
 **使用方法**：
 ```powershell
-cd "d:\unity\Test\Assets\MethodInvoker"
+# 從 Method Invoker 工具所在目錄執行
+cd "專案路徑\Assets\Method-Invoker-Unity"
 .\CompileCheck.ps1
+
+# 或從任何包含此腳本的目錄執行（會自動偵測專案路徑）
+powershell -ExecutionPolicy Bypass -File .\CompileCheck.ps1
 ```
 
 **功能**：
+- **自動偵測 Unity 專案路徑**（向上尋找包含 Assets 資料夾的目錄）
 - 啟動 Unity 並編譯專案
 - 檢測編譯錯誤並顯示
 - 比完整測試更快
@@ -57,7 +67,7 @@ cd "d:\unity\Test\Assets\MethodInvoker"
 
 ```powershell
 # 查看測試總結
-[xml]$xml = Get-Content "d:\unity\Test\TestResults.xml"
+[xml]$xml = Get-Content "{專案根目錄}\TestResults.xml"
 $testRun = $xml.'test-run'
 Write-Host "總測試數: $($testRun.total)"
 Write-Host "通過: $($testRun.passed)" -ForegroundColor Green
@@ -73,7 +83,7 @@ $xml.SelectNodes("//test-case[@result='Failed']") | ForEach-Object {
 
 ### 方法 2: 直接查看 XML 文件
 
-使用任何文本編輯器或 XML 查看器打開 `d:\unity\Test\TestResults.xml`。
+使用任何文本編輯器或 XML 查看器打開 `{專案根目錄}\TestResults.xml`。
 
 ### 方法 3: 查看詳細日誌
 
@@ -97,7 +107,22 @@ Get-Content "TestRun.log" | Select-String -Pattern "error|exception|failed" -Con
 $unityExe = "C:\Program Files\Unity\Hub\Editor\2022.3.18f1\Editor\Unity.exe"
 ```
 
-### 問題 2: 測試失敗但無錯誤訊息
+### 問題 2: 找不到 Unity 專案根目錄
+
+**錯誤訊息**: `找不到 Unity 專案根目錄 (包含 Assets 資料夾的目錄)`
+
+**原因**: 腳本無法從當前位置向上找到包含 `Assets` 資料夾的目錄
+
+**解決方法**: 
+1. 確認您的專案結構正確（應包含 `Assets` 資料夾）
+2. 確認腳本位於專案的子目錄中
+3. 如果專案結構特殊，可以手動指定專案路徑：
+```powershell
+# 在腳本中手動設定
+$projectPath = "您的專案完整路徑"
+```
+
+### 問題 3: 測試失敗但無錯誤訊息
 
 **症狀**: XML 中 `<failure><message></message>` 為空
 
@@ -111,7 +136,7 @@ $unityExe = "C:\Program Files\Unity\Hub\Editor\2022.3.18f1\Editor\Unity.exe"
 Get-Content "TestRun.log" | Select-String -Pattern "Exception" -Context 5
 ```
 
-### 問題 3: Unity 授權問題
+### 問題 4: Unity 授權問題
 
 **錯誤訊息**: `License error` 或 `Activation required`
 
@@ -119,7 +144,7 @@ Get-Content "TestRun.log" | Select-String -Pattern "Exception" -Context 5
 - 先在 Unity Editor 中手動打開專案一次
 - 確保 Unity 已正確啟動授權
 
-### 問題 4: 套件依賴錯誤
+### 問題 5: 套件依賴錯誤
 
 **錯誤訊息**: `Package 'com.unity.xxx' not found`
 

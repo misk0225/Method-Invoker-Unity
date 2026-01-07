@@ -7,7 +7,26 @@ if (-not $unityExe) {
     exit 1
 }
 
-$projectPath = "d:\unity\Test"
+# 自動偵測 Unity 專案路徑：從腳本所在目錄向上尋找包含 Assets 資料夾的目錄
+$scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+$currentPath = $scriptPath
+$projectPath = $null
+
+while ($currentPath) {
+    if (Test-Path (Join-Path $currentPath "Assets")) {
+        $projectPath = $currentPath
+        break
+    }
+    $parentPath = Split-Path -Parent $currentPath
+    if ($parentPath -eq $currentPath) { break }  # 已到達根目錄
+    $currentPath = $parentPath
+}
+
+if (-not $projectPath) {
+    Write-Host "找不到 Unity 專案根目錄 (包含 Assets 資料夾的目錄)" -ForegroundColor Red
+    Write-Host "當前腳本位置: $scriptPath" -ForegroundColor Yellow
+    exit 1
+}
 
 Write-Host "編譯檢查..." -ForegroundColor Green
 

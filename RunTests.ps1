@@ -9,7 +9,26 @@ if (-not $unityExe) {
     exit 1
 }
 
-$projectPath = "d:\unity\Test"
+# 自動偵測 Unity 專案路徑：從腳本所在目錄向上尋找包含 Assets 資料夾的目錄
+$scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+$currentPath = $scriptPath
+$projectPath = $null
+
+while ($currentPath) {
+    if (Test-Path (Join-Path $currentPath "Assets")) {
+        $projectPath = $currentPath
+        break
+    }
+    $parentPath = Split-Path -Parent $currentPath
+    if ($parentPath -eq $currentPath) { break }  # 已到達根目錄
+    $currentPath = $parentPath
+}
+
+if (-not $projectPath) {
+    Write-Host "找不到 Unity 專案根目錄 (包含 Assets 資料夾的目錄)" -ForegroundColor Red
+    Write-Host "當前腳本位置: $scriptPath" -ForegroundColor Yellow
+    exit 1
+}
 $testPlatform = "EditMode"
 $testResults = "TestResults.xml"
 $logFile = "TestRun.log"
@@ -74,17 +93,6 @@ if (Test-Path $testResults) {
 if (Test-Path $logFile) {
     Write-Host "`n=== 日誌摘要 (最後 30 行) ===" -ForegroundColor Cyan
     Get-Content $logFile | Select-Object -Last 30
-    
-    # 檢查授權錯誤
-    $licenseErrors = Get-Content $logFile | Select-String -Pattern "license|licensing|activation" -CaseSensitive:$false
-    if ($licenseErrors) {
-        Write-Host "`n=== 發現授權相關訊息 ===" -ForegroundColor Yellow
-        $licenseErrors | ForEach-Object { Write-Host $_.Line -ForegroundColor Yellow }
-        Write-Host "`n提示: 如果是授權問題，請確保:" -ForegroundColor Cyan
-        Write-Host "  1. Unity Hub 已登入" -ForegroundColor White
-        Write-Host "  2. 專案已在 Unity Hub 中啟用授權" -ForegroundColor White
-        Write-Host "  3. 或使用 -username/-password 參數" -ForegroundColor White
-    }
 }
 
 exit $process.ExitCode

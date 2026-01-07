@@ -21,6 +21,11 @@ namespace MethodInvoker
 
         private const float ButtonHeight = 22f;
         private const float Spacing = 2f;
+        
+        // State management for complex types and arrays
+        private static readonly System.Collections.Generic.Dictionary<string, bool> foldoutStates = new System.Collections.Generic.Dictionary<string, bool>();
+        private static readonly System.Collections.Generic.Dictionary<string, int> constructorSelectionIndices = new System.Collections.Generic.Dictionary<string, int>();
+        private static readonly System.Collections.Generic.Dictionary<string, object[]> constructorParameterValues = new System.Collections.Generic.Dictionary<string, object[]>();
 
     #endregion
 
@@ -37,8 +42,15 @@ namespace MethodInvoker
             var parameters = method.GetParameters();
             float height = EditorGUIUtility.singleLineHeight * 2 + Spacing * 3; // Box + method name
             
-            // Parameters
-            height += parameters.Length * (EditorGUIUtility.singleLineHeight + Spacing);
+            // Parameters - calculate dynamic heights
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                string parameterPath = $"{property.propertyPath}_param_{i}";
+                object paramValue = (methodEntry.ParameterValues != null && i < methodEntry.ParameterValues.Length) 
+                    ? methodEntry.ParameterValues[i] 
+                    : null;
+                height += GetParameterFieldHeight(parameters[i].ParameterType, paramValue, parameterPath) + Spacing;
+            }
             
             // Invoke button
             height += ButtonHeight + Spacing * 2;
@@ -82,20 +94,22 @@ namespace MethodInvoker
             for (int i = 0; i < parameters.Length; i++)
             {
                 var param = parameters[i];
-                var paramRect = new Rect(position.x + 10, currentY, position.width - 20, EditorGUIUtility.singleLineHeight);
+                string parameterPath = $"{property.propertyPath}_param_{i}";
+                float paramHeight = GetParameterFieldHeight(param.ParameterType, methodEntry.ParameterValues?[i], parameterPath);
+                var paramRect = new Rect(position.x + 10, currentY, position.width - 20, paramHeight);
                 
                 if (methodEntry.ParameterValues == null || i >= methodEntry.ParameterValues.Length)
                     continue;
 
                 EditorGUI.BeginChangeCheck();
-                var newValue = DrawParameterField(paramRect, param.Name, methodEntry.ParameterValues[i], param.ParameterType);
+                var newValue = DrawParameterFieldInternal(paramRect, param.Name, methodEntry.ParameterValues[i], param.ParameterType, parameterPath);
                 if (EditorGUI.EndChangeCheck())
                 {
                     methodEntry.ParameterValues[i] = newValue;
                     EditorUtility.SetDirty(property.serializedObject.targetObject);
                 }
 
-                currentY += EditorGUIUtility.singleLineHeight + Spacing;
+                currentY += paramHeight + Spacing;
             }
 
             // Draw invoke button
@@ -147,6 +161,33 @@ namespace MethodInvoker
             
             return obj as MethodEntry;
         }
+        
+        private object DrawParameterFieldInternal(Rect rect, string label, object value, Type type, string parameterPath)
+        {
+            // Handle by-reference types (e.g., Vector3&)
+            if (type.IsByRef)
+            {
+                type = type.GetElementType();
+            }
+            
+            // Check for arrays
+            if (type.IsArray)
+            {
+                return DrawArrayField(rect, label, value, type, parameterPath);
+            }
+            
+            // Check for complex types (classes/structs that aren't primitives or Unity types)
+            if ((type.IsClass || (type.IsValueType && !type.IsPrimitive)) &&
+                type != typeof(string) && type != typeof(Vector2) && type != typeof(Vector3) &&
+                type != typeof(Vector4) && type != typeof(Color) && !type.IsEnum &&
+                !typeof(Object).IsAssignableFrom(type))
+            {
+                return DrawComplexTypeField(rect, label, value, type, parameterPath);
+            }
+            
+            // Default to simple field drawing
+            return DrawParameterField(rect, label, value, type);
+        }
 
         private object DrawParameterField(Rect rect, string label, object value, Type type)
         {
@@ -190,6 +231,315 @@ namespace MethodInvoker
                 EditorGUI.LabelField(fieldRect, value?.ToString() ?? "null");
                 return value;
             }
+        }
+        
+        private object DrawArrayField(Rect rect, string label, object value, Type arrayType, string parameterPath)
+        {
+            Type elementType = arrayType.GetElementType();
+            Array array = value as Array;
+            
+            // Create array if null
+            if (array == null)
+            {
+                array = Array.CreateInstance(elementType, 0);
+            }
+            
+            string foldoutKey = parameterPath + "_array";
+            if (!foldoutStates.ContainsKey(foldoutKey))
+                foldoutStates[foldoutKey] = false;
+            
+            // Foldout header
+            var labelWidth = EditorGUIUtility.labelWidth;
+            var foldoutRect = new Rect(rect.x, rect.y, labelWidth, EditorGUIUtility.singleLineHeight);
+            foldoutStates[foldoutKey] = EditorGUI.Foldout(foldoutRect, foldoutStates[foldoutKey], $"{label} [{array.Length}]");
+            
+            float currentY = rect.y + EditorGUIUtility.singleLineHeight + Spacing;
+            
+            if (foldoutStates[foldoutKey])
+            {
+                // Size field
+                var sizeRect = new Rect(rect.x + 20, currentY, rect.width - 20, EditorGUIUtility.singleLineHeight);
+                int newSize = EditorGUI.IntField(sizeRect, "Size", array.Length);
+                currentY += EditorGUIUtility.singleLineHeight + Spacing;
+                
+                if (newSize != array.Length && newSize >= 0)
+                {
+                    // Resize array
+                    Array newArray = Array.CreateInstance(elementType, newSize);
+                    int copyLength = Math.Min(array.Length, newSize);
+                    Array.Copy(array, newArray, copyLength);
+                    
+                    // Initialize new elements with default values
+                    for (int i = array.Length; i < newSize; i++)
+                    {
+                        newArray.SetValue(GetDefaultValue(elementType), i);
+                    }
+                    
+                    array = newArray;
+                }
+                
+                // Draw elements
+                for (int i = 0; i < array.Length; i++)
+                {
+                    string elementPath = $"{parameterPath}_array_{i}";
+                    float elementHeight = GetParameterFieldHeight(elementType, array.GetValue(i), elementPath);
+                    var elementRect = new Rect(rect.x + 20, currentY, rect.width - 20, elementHeight);
+                    var elementValue = array.GetValue(i);
+                    
+                    EditorGUI.BeginChangeCheck();
+                    var newValue = DrawParameterFieldInternal(elementRect, $"Element {i}", elementValue, elementType, elementPath);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        array.SetValue(newValue, i);
+                    }
+                    
+                    currentY += elementHeight + Spacing;
+                }
+            }
+            
+            return array;
+        }
+        
+        private object DrawComplexTypeField(Rect rect, string label, object value, Type type, string parameterPath)
+        {
+            string foldoutKey = parameterPath + "_complex";
+            if (!foldoutStates.ContainsKey(foldoutKey))
+                foldoutStates[foldoutKey] = false;
+            
+            float currentY = rect.y;
+            
+            if (value == null)
+            {
+                // Show '+' button and constructor dropdown
+                var labelWidth = EditorGUIUtility.labelWidth;
+                var labelRect = new Rect(rect.x, currentY, labelWidth, EditorGUIUtility.singleLineHeight);
+                EditorGUI.LabelField(labelRect, label);
+                
+                var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+                
+                if (constructors.Length == 0)
+                {
+                    var nullRect = new Rect(rect.x + labelWidth, currentY, rect.width - labelWidth, EditorGUIUtility.singleLineHeight);
+                    EditorGUI.LabelField(nullRect, "No public constructors");
+                    return null;
+                }
+                
+                string ctorKey = parameterPath + "_ctor";
+                if (!constructorSelectionIndices.ContainsKey(ctorKey))
+                    constructorSelectionIndices[ctorKey] = 0;
+                
+                int selectedCtorIndex = constructorSelectionIndices[ctorKey];
+                if (selectedCtorIndex >= constructors.Length)
+                    selectedCtorIndex = 0;
+                
+                var buttonWidth = 30f;
+                var buttonRect = new Rect(rect.x + labelWidth, currentY, buttonWidth, EditorGUIUtility.singleLineHeight);
+                
+                bool createInstance = GUI.Button(buttonRect, "+");
+                
+                if (constructors.Length > 1)
+                {
+                    // Show constructor dropdown
+                    var dropdownRect = new Rect(rect.x + labelWidth + buttonWidth + 5, currentY, rect.width - labelWidth - buttonWidth - 5, EditorGUIUtility.singleLineHeight);
+                    
+                    string[] ctorNames = new string[constructors.Length];
+                    for (int i = 0; i < constructors.Length; i++)
+                    {
+                        var parameters = constructors[i].GetParameters();
+                        ctorNames[i] = $"Constructor ({string.Join(", ", parameters.Select(p => p.ParameterType.Name))})";
+                    }
+                    
+                    EditorGUI.BeginChangeCheck();
+                    selectedCtorIndex = EditorGUI.Popup(dropdownRect, selectedCtorIndex, ctorNames);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        constructorSelectionIndices[ctorKey] = selectedCtorIndex;
+                    }
+                }
+                
+                currentY += EditorGUIUtility.singleLineHeight + Spacing;
+                
+                // Draw constructor parameters
+                var selectedCtor = constructors[selectedCtorIndex];
+                var ctorParams = selectedCtor.GetParameters();
+                
+                string ctorParamsKey = parameterPath + "_ctorparams";
+                if (!constructorParameterValues.ContainsKey(ctorParamsKey) || constructorParameterValues[ctorParamsKey].Length != ctorParams.Length)
+                {
+                    constructorParameterValues[ctorParamsKey] = new object[ctorParams.Length];
+                    for (int i = 0; i < ctorParams.Length; i++)
+                    {
+                        constructorParameterValues[ctorParamsKey][i] = GetDefaultValue(ctorParams[i].ParameterType);
+                    }
+                }
+                
+                for (int i = 0; i < ctorParams.Length; i++)
+                {
+                    string ctorParamPath = $"{parameterPath}_ctorparam_{i}";
+                    float ctorParamHeight = GetParameterFieldHeight(ctorParams[i].ParameterType, constructorParameterValues[ctorParamsKey][i], ctorParamPath);
+                    var paramRect = new Rect(rect.x + 20, currentY, rect.width - 20, ctorParamHeight);
+                    
+                    EditorGUI.BeginChangeCheck();
+                    var paramValue = DrawParameterFieldInternal(paramRect, ctorParams[i].Name, constructorParameterValues[ctorParamsKey][i], ctorParams[i].ParameterType, ctorParamPath);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        constructorParameterValues[ctorParamsKey][i] = paramValue;
+                    }
+                    
+                    currentY += ctorParamHeight + Spacing;
+                }
+                
+                if (createInstance)
+                {
+                    try
+                    {
+                        value = selectedCtor.Invoke(constructorParameterValues[ctorParamsKey]);
+                        constructorParameterValues.Remove(ctorParamsKey);
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"Failed to create instance: {e.Message}");
+                    }
+                }
+            }
+            else
+            {
+                // Show foldout with fields
+                var labelWidth = EditorGUIUtility.labelWidth;
+                var foldoutRect = new Rect(rect.x, currentY, rect.width, EditorGUIUtility.singleLineHeight);
+                foldoutStates[foldoutKey] = EditorGUI.Foldout(foldoutRect, foldoutStates[foldoutKey], $"{label} ({type.Name})");
+                
+                currentY += EditorGUIUtility.singleLineHeight + Spacing;
+                
+                if (foldoutStates[foldoutKey])
+                {
+                    var fields = GetSerializableFields(type);
+                    
+                    foreach (var field in fields)
+                    {
+                        string fieldPath = $"{parameterPath}_field_{field.Name}";
+                        var fieldValue = field.GetValue(value);
+                        float fieldHeight = GetParameterFieldHeight(field.FieldType, fieldValue, fieldPath);
+                        var fieldRect = new Rect(rect.x + 20, currentY, rect.width - 20, fieldHeight);
+                        
+                        EditorGUI.BeginChangeCheck();
+                        var newFieldValue = DrawParameterFieldInternal(fieldRect, field.Name, fieldValue, field.FieldType, fieldPath);
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            field.SetValue(value, newFieldValue);
+                        }
+                        
+                        currentY += fieldHeight + Spacing;
+                    }
+                }
+            }
+            
+            return value;
+        }
+        
+        private FieldInfo[] GetSerializableFields(Type type)
+        {
+            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            return fields.Where(f =>
+                (f.IsPublic && !f.IsNotSerialized) ||
+                f.GetCustomAttribute<SerializeField>() != null).ToArray();
+        }
+        
+        private object GetDefaultValue(Type type)
+        {
+            if (type.IsValueType)
+            {
+                return Activator.CreateInstance(type);
+            }
+            return null;
+        }
+        
+        private float GetParameterFieldHeight(Type type, object value, string parameterPath)
+        {
+            // Handle by-reference types
+            if (type.IsByRef)
+            {
+                type = type.GetElementType();
+            }
+            
+            // Primitive and Unity built-in types
+            if (type == typeof(int) || type == typeof(float) || type == typeof(double) ||
+                type == typeof(string) || type == typeof(bool) ||
+                type == typeof(Vector2) || type == typeof(Vector3) || type == typeof(Vector4) ||
+                type == typeof(Color) || type.IsEnum || typeof(Object).IsAssignableFrom(type))
+            {
+                return EditorGUIUtility.singleLineHeight;
+            }
+            
+            // Arrays
+            if (type.IsArray)
+            {
+                float height = EditorGUIUtility.singleLineHeight; // Foldout header
+                
+                string foldoutKey = parameterPath + "_array";
+                if (foldoutStates.ContainsKey(foldoutKey) && foldoutStates[foldoutKey])
+                {
+                    Array array = value as Array;
+                    if (array != null)
+                    {
+                        height += EditorGUIUtility.singleLineHeight + Spacing; // Size field
+                        
+                        Type elementType = type.GetElementType();
+                        for (int i = 0; i < array.Length; i++)
+                        {
+                            height += GetParameterFieldHeight(elementType, array.GetValue(i), $"{parameterPath}_array_{i}") + Spacing;
+                        }
+                    }
+                }
+                
+                return height;
+            }
+            
+            // Complex types (classes/structs)
+            if (type.IsClass || (type.IsValueType && !type.IsPrimitive))
+            {
+                float height = EditorGUIUtility.singleLineHeight; // Label or foldout
+                
+                if (value == null)
+                {
+                    // '+' button and constructor dropdown
+                    var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+                    if (constructors.Length > 0)
+                    {
+                        string ctorKey = parameterPath + "_ctor";
+                        int selectedCtorIndex = constructorSelectionIndices.ContainsKey(ctorKey) ? constructorSelectionIndices[ctorKey] : 0;
+                        if (selectedCtorIndex >= constructors.Length)
+                            selectedCtorIndex = 0;
+                        
+                        var ctorParams = constructors[selectedCtorIndex].GetParameters();
+                        for (int i = 0; i < ctorParams.Length; i++)
+                        {
+                            string ctorParamsKey = parameterPath + "_ctorparams";
+                            object paramValue = constructorParameterValues.ContainsKey(ctorParamsKey) && i < constructorParameterValues[ctorParamsKey].Length
+                                ? constructorParameterValues[ctorParamsKey][i]
+                                : null;
+                            height += GetParameterFieldHeight(ctorParams[i].ParameterType, paramValue, $"{parameterPath}_ctorparam_{i}") + Spacing;
+                        }
+                    }
+                }
+                else
+                {
+                    string foldoutKey = parameterPath + "_complex";
+                    if (foldoutStates.ContainsKey(foldoutKey) && foldoutStates[foldoutKey])
+                    {
+                        var fields = GetSerializableFields(type);
+                        foreach (var field in fields)
+                        {
+                            var fieldValue = field.GetValue(value);
+                            height += GetParameterFieldHeight(field.FieldType, fieldValue, $"{parameterPath}_field_{field.Name}") + Spacing;
+                        }
+                    }
+                }
+                
+                return height;
+            }
+            
+            return EditorGUIUtility.singleLineHeight;
         }
 
     #endregion
