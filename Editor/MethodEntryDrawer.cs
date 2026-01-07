@@ -62,6 +62,8 @@ namespace MethodInvoker
         {
             var methodEntry = GetMethodEntry(property);
             
+            Debug.Log($"[MethodEntryDrawer] OnGUI called, methodEntry={(methodEntry != null ? "not null" : "NULL")}");
+            
             // Debug: Draw something even if methodEntry is null
             if (methodEntry == null)
             {
@@ -70,6 +72,8 @@ namespace MethodInvoker
             }
             
             MethodInfo method = methodEntry.Delegate?.Method ?? methodEntry.DelegateInfo.Method;
+            Debug.Log($"[MethodEntryDrawer] Method={(method != null ? method.Name : "NULL")}, ParamCount={method?.GetParameters().Length ?? 0}");
+            
             if (method == null)
             {
                 EditorGUI.LabelField(position, "Method is NULL", EditorStyles.miniLabel);
@@ -91,15 +95,32 @@ namespace MethodInvoker
 
             // Draw parameters
             var parameters = method.GetParameters();
+            
+            // Initialize ParameterValues if needed
+            if (methodEntry.ParameterValues == null || methodEntry.ParameterValues.Length != parameters.Length)
+            {
+                Debug.Log($"[MethodEntryDrawer] 初始化 ParameterValues for {method.Name}: " +
+                         $"was null={methodEntry.ParameterValues == null}, " +
+                         $"expected length={parameters.Length}, " +
+                         $"actual length={methodEntry.ParameterValues?.Length ?? 0}");
+                
+                methodEntry.ParameterValues = new object[parameters.Length];
+                for (int j = 0; j < parameters.Length; j++)
+                {
+                    methodEntry.ParameterValues[j] = GetDefaultValue(parameters[j].ParameterType);
+                    Debug.Log($"  [MethodEntryDrawer] 初始化 param[{j}] ({parameters[j].Name}): " +
+                             $"type={parameters[j].ParameterType.Name}, " +
+                             $"value={methodEntry.ParameterValues[j] ?? "null"}");
+                }
+                EditorUtility.SetDirty(property.serializedObject.targetObject);
+            }
+            
             for (int i = 0; i < parameters.Length; i++)
             {
                 var param = parameters[i];
                 string parameterPath = $"{property.propertyPath}_param_{i}";
-                float paramHeight = GetParameterFieldHeight(param.ParameterType, methodEntry.ParameterValues?[i], parameterPath);
+                float paramHeight = GetParameterFieldHeight(param.ParameterType, methodEntry.ParameterValues[i], parameterPath);
                 var paramRect = new Rect(position.x + 10, currentY, position.width - 20, paramHeight);
-                
-                if (methodEntry.ParameterValues == null || i >= methodEntry.ParameterValues.Length)
-                    continue;
 
                 EditorGUI.BeginChangeCheck();
                 var newValue = DrawParameterFieldInternal(paramRect, param.Name, methodEntry.ParameterValues[i], param.ParameterType, parameterPath);

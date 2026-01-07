@@ -1,6 +1,9 @@
 #region
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -33,6 +36,11 @@ namespace MethodInvoker
         private Vector2 scrollPosition;
         private SerializedObject serializedObject;
         private SerializedProperty containerProperty;
+        
+        // State management for foldouts and constructor selection
+        private static Dictionary<string, bool> foldoutStates = new Dictionary<string, bool>();
+        private static Dictionary<string, int> constructorSelectionIndices = new Dictionary<string, int>();
+        private static Dictionary<string, object[]> constructorParameterValues = new Dictionary<string, object[]>();
 
     #endregion
 
@@ -204,15 +212,25 @@ namespace MethodInvoker
             if (methodEntry.ParameterValues == null || methodEntry.ParameterValues.Length != parameters.Length)
             {
                 methodEntry.ParameterValues = new object[parameters.Length];
+                for (int j = 0; j < parameters.Length; j++)
+                {
+                    methodEntry.ParameterValues[j] = GetDefaultValue(parameters[j].ParameterType);
+                }
             }
             
             for (int i = 0; i < parameters.Length; i++)
             {
                 var param = parameters[i];
+                string paramPath = $"window_method_{index}_param_{i}";
+                
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField(param.Name, GUILayout.Width(EditorGUIUtility.labelWidth));
-                methodEntry.ParameterValues[i] = DrawParameterField(methodEntry.ParameterValues[i], param.ParameterType);
+                EditorGUILayout.LabelField(param.Name, GUILayout.Width(120));
                 EditorGUILayout.EndHorizontal();
+                
+                methodEntry.ParameterValues[i] = DrawParameterField(
+                    methodEntry.ParameterValues[i], 
+                    param.ParameterType, 
+                    paramPath);
             }
             
             // Invoke button
@@ -224,15 +242,30 @@ namespace MethodInvoker
             GUILayout.EndVertical();
         }
         
-        private object DrawParameterField(object value, Type type)
+        private object DrawParameterField(object value, Type type, string parameterPath)
         {
             // Handle by-reference types
             if (type.IsByRef)
             {
                 type = type.GetElementType();
             }
+
+            // Handle arrays
+            if (type.IsArray)
+            {
+                return DrawArrayField(value, type, parameterPath);
+            }
             
-            // Handle different types
+            // Handle complex types (classes/structs)
+            if ((type.IsClass || (type.IsValueType && !type.IsPrimitive)) &&
+                type != typeof(string) && type != typeof(Vector2) && type != typeof(Vector3) &&
+                type != typeof(Vector4) && type != typeof(Color) && !type.IsEnum &&
+                !typeof(UnityEngine.Object).IsAssignableFrom(type))
+            {
+                return DrawComplexTypeField(value, type, parameterPath);
+            }
+            
+            // Handle different primitive types
             if (type == typeof(int))
                 return EditorGUILayout.IntField(value != null ? (int)value : 0);
             else if (type == typeof(float))
@@ -260,6 +293,195 @@ namespace MethodInvoker
                 EditorGUILayout.LabelField(value?.ToString() ?? "null");
                 return value;
             }
+        }
+        
+        private object DrawArrayField(object value, Type arrayType, string parameterPath)
+        {
+            Type elementType = arrayType.GetElementType();
+            Array array = value as Array;
+            
+            if (array == null)
+            {
+                array = Array.CreateInstance(elementType, 0);
+            }
+            
+            string foldoutKey = parameterPath + "_array";
+            if (!foldoutStates.ContainsKey(foldoutKey))
+                foldoutStates[foldoutKey] = false;
+            
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            foldoutStates[foldoutKey] = EditorGUILayout.Foldout(foldoutStates[foldoutKey], $"Array [{array.Length}]");
+            
+            if (foldoutStates[foldoutKey])
+            {
+                EditorGUI.indentLevel++;
+                
+                int newSize = EditorGUILayout.IntField("Size", array.Length);
+                if (newSize != array.Length && newSize >= 0)
+                {
+                    Array newArray = Array.CreateInstance(elementType, newSize);
+                    int copyLength = Math.Min(array.Length, newSize);
+                    Array.Copy(array, newArray, copyLength);
+                    
+                    for (int i = array.Length; i < newSize; i++)
+                    {
+                        newArray.SetValue(GetDefaultValue(elementType), i);
+                    }
+                    
+                    array = newArray;
+                }
+                
+                for (int i = 0; i < array.Length; i++)
+                {
+                    string elementPath = $"{parameterPath}_array_{i}";
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField($"Element {i}", GUILayout.Width(80));
+                    var newValue = DrawParameterField(array.GetValue(i), elementType, elementPath);
+                    array.SetValue(newValue, i);
+                    EditorGUILayout.EndHorizontal();
+                }
+                
+                EditorGUI.indentLevel--;
+            }
+            
+            EditorGUILayout.EndVertical();
+            return array;
+        }
+        
+        private object DrawComplexTypeField(object value, Type type, string parameterPath)
+        {
+            string foldoutKey = parameterPath + "_complex";
+            if (!foldoutStates.ContainsKey(foldoutKey))
+                foldoutStates[foldoutKey] = false;
+            
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            
+            if (value == null)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(type.Name, GUILayout.Width(120));
+                
+                var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+                
+                if (constructors.Length == 0)
+                {
+                    EditorGUILayout.LabelField("No public constructors");
+                    EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.EndVertical();
+                    return null;
+                }
+                
+                string ctorKey = parameterPath + "_ctor";
+                if (!constructorSelectionIndices.ContainsKey(ctorKey))
+                    constructorSelectionIndices[ctorKey] = 0;
+                
+                int selectedCtorIndex = constructorSelectionIndices[ctorKey];
+                if (selectedCtorIndex >= constructors.Length)
+                    selectedCtorIndex = 0;
+                
+                bool createInstance = GUILayout.Button("+", GUILayout.Width(30));
+                
+                if (constructors.Length > 1)
+                {
+                    string[] ctorNames = new string[constructors.Length];
+                    for (int i = 0; i < constructors.Length; i++)
+                    {
+                        var parameters = constructors[i].GetParameters();
+                        ctorNames[i] = $"Constructor ({string.Join(", ", parameters.Select(p => p.ParameterType.Name))})";
+                    }
+                    
+                    selectedCtorIndex = EditorGUILayout.Popup(selectedCtorIndex, ctorNames);
+                    constructorSelectionIndices[ctorKey] = selectedCtorIndex;
+                }
+                
+                EditorGUILayout.EndHorizontal();
+                
+                var selectedCtor = constructors[selectedCtorIndex];
+                var ctorParams = selectedCtor.GetParameters();
+                
+                string ctorParamsKey = parameterPath + "_ctorparams";
+                if (!constructorParameterValues.ContainsKey(ctorParamsKey) || constructorParameterValues[ctorParamsKey].Length != ctorParams.Length)
+                {
+                    constructorParameterValues[ctorParamsKey] = new object[ctorParams.Length];
+                    for (int i = 0; i < ctorParams.Length; i++)
+                    {
+                        constructorParameterValues[ctorParamsKey][i] = GetDefaultValue(ctorParams[i].ParameterType);
+                    }
+                }
+                
+                if (ctorParams.Length > 0)
+                {
+                    EditorGUI.indentLevel++;
+                    for (int i = 0; i < ctorParams.Length; i++)
+                    {
+                        string ctorParamPath = $"{parameterPath}_ctorparam_{i}";
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUILayout.LabelField(ctorParams[i].Name, GUILayout.Width(120));
+                        constructorParameterValues[ctorParamsKey][i] = DrawParameterField(
+                            constructorParameterValues[ctorParamsKey][i], 
+                            ctorParams[i].ParameterType, 
+                            ctorParamPath);
+                        EditorGUILayout.EndHorizontal();
+                    }
+                    EditorGUI.indentLevel--;
+                }
+                
+                if (createInstance)
+                {
+                    try
+                    {
+                        value = selectedCtor.Invoke(constructorParameterValues[ctorParamsKey]);
+                        constructorParameterValues.Remove(ctorParamsKey);
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"Failed to create instance: {e.Message}");
+                    }
+                }
+            }
+            else
+            {
+                foldoutStates[foldoutKey] = EditorGUILayout.Foldout(foldoutStates[foldoutKey], $"{type.Name}");
+                
+                if (foldoutStates[foldoutKey])
+                {
+                    EditorGUI.indentLevel++;
+                    var fields = GetSerializableFields(type);
+                    
+                    foreach (var field in fields)
+                    {
+                        string fieldPath = $"{parameterPath}_field_{field.Name}";
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUILayout.LabelField(field.Name, GUILayout.Width(120));
+                        var fieldValue = field.GetValue(value);
+                        var newFieldValue = DrawParameterField(fieldValue, field.FieldType, fieldPath);
+                        field.SetValue(value, newFieldValue);
+                        EditorGUILayout.EndHorizontal();
+                    }
+                    
+                    EditorGUI.indentLevel--;
+                }
+            }
+            
+            EditorGUILayout.EndVertical();
+            return value;
+        }
+        
+        private FieldInfo[] GetSerializableFields(Type type)
+        {
+            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            return fields.Where(f =>
+                (f.IsPublic && !f.IsNotSerialized) ||
+                f.GetCustomAttribute<SerializeField>() != null).ToArray();
+        }
+        
+        private object GetDefaultValue(Type type)
+        {
+            if (type.IsValueType)
+            {
+                return Activator.CreateInstance(type);
+            }
+            return null;
         }
 
     #endregion

@@ -99,6 +99,24 @@ namespace MethodInvoker
                 // Try to restore from serialized DelegateInfo
                 DelegateInfo = val.DelegateInfo;
             }
+
+            // Ensure ParameterValues is initialized
+            if (DelegateInfo.Method != null)
+            {
+                var paramCount = DelegateInfo.Method.GetParameters().Length;
+                if (ParameterValues == null || ParameterValues.Length != paramCount)
+                {
+                    var oldValues = ParameterValues;
+                    ParameterValues = new object[paramCount];
+
+                    // Copy old values if available
+                    if (oldValues != null)
+                    {
+                        int copyCount = System.Math.Min(oldValues.Length, paramCount);
+                        System.Array.Copy(oldValues, ParameterValues, copyCount);
+                    }
+                }
+            }
         }
 
         public void OnBeforeSerialize()
