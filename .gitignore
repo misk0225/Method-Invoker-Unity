@@ -1,0 +1,10 @@
+# Unity meta files
+*.meta
+
+# Logs
+*.log
+
+# Test results
+TestResults.xml
+TestRun.log
+CompileCheck.log
