@@ -94,11 +94,6 @@ namespace MethodInvoker
                     Target = Delegate.Target as Object
                 };
             }
-            else
-            {
-                // Try to restore from serialized DelegateInfo
-                DelegateInfo = val.DelegateInfo;
-            }
 
             // Ensure ParameterValues is initialized
             if (DelegateInfo.Method != null)
@@ -124,7 +119,6 @@ namespace MethodInvoker
             var val = new SerializedData()
             {
                 Delegate = Delegate,
-                DelegateInfo = DelegateInfo,
                 ParameterValues = ParameterValues
             };
             bytes = CustomSerializationUtility.SerializeValue(val, out unityReferences);
@@ -137,7 +131,6 @@ namespace MethodInvoker
         private struct SerializedData
         {
             public Delegate Delegate;
-            public DelegateInfo DelegateInfo;
             public object[] ParameterValues;
         }
 

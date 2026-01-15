@@ -1,5 +1,6 @@
 #region
 
+using System;
 using System.Reflection;
 using UnityEngine;
 
@@ -7,9 +8,12 @@ using UnityEngine;
 
 namespace MethodInvoker
 {
+    [Serializable]
     public struct DelegateInfo
     {
-        public Object Target;
+        public UnityEngine.Object Target;
+
+        [NonSerialized]
         public MethodInfo Method;
     }
 }

@@ -98,7 +98,10 @@ namespace MethodInvoker
                 writer.Write(array.Length);
                 for (int i = 0; i < array.Length; i++)
                 {
-                    SerializeObject(array.GetValue(i), elementType, writer, unityRefs);
+                    var element = array.GetValue(i);
+                    // Use actual element type for object arrays, not declared element type
+                    var actualElementType = element != null ? element.GetType() : elementType;
+                    SerializeObject(element, actualElementType, writer, unityRefs);
                 }
                 return;
             }
