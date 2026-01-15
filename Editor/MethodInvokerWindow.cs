@@ -41,6 +41,9 @@ namespace MethodInvoker
         private static Dictionary<string, bool> foldoutStates = new Dictionary<string, bool>();
         private static Dictionary<string, int> constructorSelectionIndices = new Dictionary<string, int>();
         private static Dictionary<string, object[]> constructorParameterValues = new Dictionary<string, object[]>();
+        
+        // State management for component method list foldouts
+        private static Dictionary<int, bool> componentFoldoutStates = new Dictionary<int, bool>();
 
     #endregion
 
@@ -133,7 +136,8 @@ namespace MethodInvoker
                     }
                     else
                     {
-                        int lastInstanceId = -9999;
+                        // Group methods by component
+                        var methodsByComponent = new Dictionary<Component, List<(MethodEntry entry, int index)>>();
                         
                         for (int i = 0; i < container.methodEntries.Count; i++)
                         {
@@ -152,26 +156,69 @@ namespace MethodInvoker
                             
                             if (comp != null)
                             {
-                                int instanceID = comp.GetInstanceID();
-                                if (instanceID != lastInstanceId)
+                                if (!methodsByComponent.ContainsKey(comp))
                                 {
-                                    if (lastInstanceId != -9999)
-                                    {
-                                        GUILayout.Space(5);
-                                        DrawDivider(Color.red);
-                                        GUILayout.Space(5);
-                                    }
-                                    
-                                    EditorGUILayout.ObjectField(comp, comp.GetType(), true);
-                                    GUILayout.Space(5);
-                                    
-                                    lastInstanceId = instanceID;
+                                    methodsByComponent[comp] = new List<(MethodEntry, int)>();
                                 }
+                                methodsByComponent[comp].Add((methodEntry, i));
+                            }
+                        }
+                        
+                        // Draw each component with foldout
+                        bool isFirst = true;
+                        foreach (var kvp in methodsByComponent)
+                        {
+                            var comp = kvp.Key;
+                            var methods = kvp.Value;
+                            int instanceID = comp.GetInstanceID();
+                            
+                            if (!isFirst)
+                            {
+                                GUILayout.Space(5);
+                                DrawDivider(Color.red);
+                                GUILayout.Space(5);
+                            }
+                            isFirst = false;
+                            
+                            // Component header with foldout
+                            GUILayout.BeginHorizontal();
+                            
+                            // Initialize foldout state (default: collapsed)
+                            if (!componentFoldoutStates.ContainsKey(instanceID))
+                            {
+                                componentFoldoutStates[instanceID] = false;
                             }
                             
-                            // Draw method entry directly
-                            DrawMethodEntry(methodEntry, i);
-                            GUILayout.Space(5);
+                            // Foldout with component name and method count
+                            var foldoutLabel = $"{comp.GetType().Name} ({methods.Count} methods)";
+                            componentFoldoutStates[instanceID] = EditorGUILayout.Foldout(
+                                componentFoldoutStates[instanceID], 
+                                foldoutLabel, 
+                                true, 
+                                EditorStyles.foldoutHeader
+                            );
+                            
+                            // Component reference field (read-only)
+                            GUI.enabled = false;
+                            EditorGUILayout.ObjectField(comp, comp.GetType(), true, GUILayout.Width(150));
+                            GUI.enabled = true;
+                            
+                            GUILayout.EndHorizontal();
+                            GUILayout.Space(3);
+                            
+                            // Draw methods if expanded
+                            if (componentFoldoutStates[instanceID])
+                            {
+                                EditorGUI.indentLevel++;
+                                
+                                foreach (var methodData in methods)
+                                {
+                                    DrawMethodEntry(methodData.entry, methodData.index);
+                                    GUILayout.Space(5);
+                                }
+                                
+                                EditorGUI.indentLevel--;
+                            }
                         }
                     }
                 }

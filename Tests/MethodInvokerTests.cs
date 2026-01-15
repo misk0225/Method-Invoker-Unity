@@ -599,5 +599,254 @@ namespace MethodInvoker.Tests
             Assert.AreEqual(50, script.lastDeepNestedClass.level1.value, "Constructor param value should match");
             Assert.AreEqual(123, script.lastDeepNestedClass.level1.nestedObject.intField, "Nested field should match");
         }
+
+        // ====== 新增測試：邊界情況 ======
+
+        [Test]
+        public void Test_EmptyArray_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "IntArrayParameterMethod");
+
+            Assert.IsNotNull(method, "Should find IntArrayParameterMethod");
+
+            // Test with empty array
+            int[] emptyArray = new int[0];
+            method.ParameterValues[0] = emptyArray;
+            method.Invoke();
+
+            Assert.IsNotNull(script.lastIntArray, "Array should not be null");
+            Assert.AreEqual(0, script.lastIntArray.Length, "Array should be empty");
+        }
+
+        [Test]
+        public void Test_NullArrayParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "IntArrayParameterMethod");
+
+            Assert.IsNotNull(method, "Should find IntArrayParameterMethod");
+
+            // Test with null array
+            method.ParameterValues[0] = null;
+            method.Invoke();
+
+            Assert.IsNull(script.lastIntArray, "Array should remain null");
+        }
+
+        [Test]
+        public void Test_NullStringParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "StringParameterMethod");
+
+            Assert.IsNotNull(method, "Should find StringParameterMethod");
+
+            // Test with null string
+            method.ParameterValues[0] = null;
+            method.Invoke();
+
+            Assert.IsNull(script.lastStringValue, "String should remain null");
+        }
+
+        [Test]
+        public void Test_MultipleComponents_SameType()
+        {
+            var script1 = testObject.AddComponent<TestMethodScript>();
+            var script2 = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            // Should find methods from both components
+            var methods = container.methodEntries.FindAll(m =>
+                m.Delegate?.Method?.Name == "NoParameterMethod");
+
+            Assert.GreaterOrEqual(methods.Count, 2, "Should find methods from both TestMethodScript components");
+        }
+
+        [Test]
+        public void Test_ParameterValues_AutoInitialize()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+
+            // Create entry with method that has 3 parameters
+            var del = new System.Action<int, string, float>(script.MultipleParametersMethod);
+            var delInfo = new DelegateInfo { Method = del.Method, Target = script };
+            var entry = new MethodEntry(del, delInfo);
+
+            // ParameterValues should be automatically initialized in constructor
+            Assert.IsNotNull(entry.ParameterValues, "ParameterValues should be initialized");
+            Assert.AreEqual(3, entry.ParameterValues.Length, "Should have 3 parameters for MultipleParametersMethod");
+
+            // Verify that creating entry with different parameter count works
+            var del2 = new System.Action(script.NoParameterMethod);
+            var delInfo2 = new DelegateInfo { Method = del2.Method, Target = script };
+            var entry2 = new MethodEntry(del2, delInfo2);
+
+            Assert.IsNotNull(entry2.ParameterValues, "ParameterValues should be initialized");
+            Assert.AreEqual(0, entry2.ParameterValues.Length, "Should have 0 parameters for NoParameterMethod");
+        }
+
+        // ====== 新增測試：其他 Unity 類型 ======
+
+        [Test]
+        public void Test_QuaternionParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "QuaternionParameterMethod");
+
+            Assert.IsNotNull(method, "Should find QuaternionParameter");
+
+            var testQuaternion = Quaternion.Euler(45, 90, 180);
+            method.ParameterValues[0] = testQuaternion;
+            method.Invoke();
+
+            Assert.AreEqual(testQuaternion.x, script.lastQuaternionValue.x, 0.001f, "Quaternion X should match");
+            Assert.AreEqual(testQuaternion.y, script.lastQuaternionValue.y, 0.001f, "Quaternion Y should match");
+            Assert.AreEqual(testQuaternion.z, script.lastQuaternionValue.z, 0.001f, "Quaternion Z should match");
+            Assert.AreEqual(testQuaternion.w, script.lastQuaternionValue.w, 0.001f, "Quaternion W should match");
+        }
+
+        [Test]
+        public void Test_RectParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "RectParameterMethod");
+
+            Assert.IsNotNull(method, "Should find RectParameterMethod");
+
+            var testRect = new Rect(10, 20, 100, 200);
+            method.ParameterValues[0] = testRect;
+            method.Invoke();
+
+            Assert.AreEqual(testRect.x, script.lastRectValue.x, 0.001f, "Rect X should match");
+            Assert.AreEqual(testRect.y, script.lastRectValue.y, 0.001f, "Rect Y should match");
+            Assert.AreEqual(testRect.width, script.lastRectValue.width, 0.001f, "Rect width should match");
+            Assert.AreEqual(testRect.height, script.lastRectValue.height, 0.001f, "Rect height should match");
+        }
+
+        [Test]
+        public void Test_BoundsParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "BoundsParameterMethod");
+
+            Assert.IsNotNull(method, "Should find BoundsParameterMethod");
+
+            var testBounds = new Bounds(new Vector3(1, 2, 3), new Vector3(10, 20, 30));
+            method.ParameterValues[0] = testBounds;
+            method.Invoke();
+
+            Assert.AreEqual(testBounds.center, script.lastBoundsValue.center, "Bounds center should match");
+            Assert.AreEqual(testBounds.size, script.lastBoundsValue.size, "Bounds size should match");
+        }
+
+        // ====== 新增測試：錯誤處理 ======
+
+        [Test]
+        public void Test_MethodInvoke_WithNullDelegate()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var delInfo = new DelegateInfo
+            {
+                Method = typeof(TestMethodScript).GetMethod("NoParameterMethod"),
+                Target = script
+            };
+            var entry = new MethodEntry(null, delInfo); // Delegate is null
+
+            // Should not throw exception, use MethodInfo.Invoke instead
+            Assert.DoesNotThrow(() => entry.Invoke(), "Should handle null delegate gracefully");
+            Assert.IsTrue(script.noParamCalled, "Method should have been called via MethodInfo");
+        }
+
+        [Test]
+        public void Test_Serialization_WithNullParameterValues()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var del = new System.Action<string>(script.StringParameterMethod);
+            var delInfo = new DelegateInfo { Method = del.Method, Target = script };
+            var entry = new MethodEntry(del, delInfo);
+
+            // Set parameter to null
+            entry.ParameterValues[0] = null;
+
+            // Test serialization with null value
+            Assert.DoesNotThrow(() => entry.OnBeforeSerialize(), "Should serialize null values without error");
+
+            var bytesField = typeof(MethodEntry).GetField("bytes", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var bytes = (byte[])bytesField.GetValue(entry);
+
+            Assert.IsNotNull(bytes, "Should produce bytes even with null parameter");
+
+            // Deserialize and verify
+            Assert.DoesNotThrow(() => entry.OnAfterDeserialize(), "Should deserialize null values without error");
+            Assert.IsNull(entry.ParameterValues[0], "Null value should be preserved after deserialization");
+        }
+
+        [Test]
+        public void Test_Serialization_EmptyArray_PreservesType()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var del = new System.Action<int[]>(script.IntArrayParameterMethod);
+            var delInfo = new DelegateInfo { Method = del.Method, Target = script };
+            var entry = new MethodEntry(del, delInfo);
+
+            // Set empty array
+            entry.ParameterValues[0] = new int[0];
+
+            // Serialize and deserialize
+            entry.OnBeforeSerialize();
+            entry.OnAfterDeserialize();
+
+            Assert.IsNotNull(entry.ParameterValues[0], "Array should not be null");
+            Assert.IsInstanceOf<int[]>(entry.ParameterValues[0], "Should preserve array type");
+            Assert.AreEqual(0, ((int[])entry.ParameterValues[0]).Length, "Should preserve empty array");
+        }
+
+        [Test]
+        public void Test_Container_WithNullGameObject_NoError()
+        {
+            var container = new MethodContainer(null);
+
+            Assert.IsNotNull(container, "Container should be created");
+            Assert.IsNotNull(container.methodEntries, "Method entries should be initialized");
+            Assert.AreEqual(0, container.methodEntries.Count, "Should have no entries for null GameObject");
+            Assert.DoesNotThrow(() => container.RefreshEntries(), "Should handle null GameObject gracefully");
+        }
+
+        [Test]
+        public void Test_DestroyedComponent_HandlesGracefully()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "NoParameterMethod");
+
+            Assert.IsNotNull(method, "Should find method");
+
+            // Destroy the component
+            UnityEngine.Object.DestroyImmediate(script);
+
+            // Refreshing should handle destroyed component gracefully
+            Assert.DoesNotThrow(() => container.RefreshEntries(), "Should handle destroyed component");
+        }
     }
 }

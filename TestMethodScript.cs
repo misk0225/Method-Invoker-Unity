@@ -87,6 +87,9 @@ public class TestMethodScript : MonoBehaviour
     public TestCustomClass[] lastCustomClassArray = null;
     public TestClassWithArray lastClassWithArray = null;
     public TestDeepNestedClass lastDeepNestedClass = null;
+    public Quaternion lastQuaternionValue = Quaternion.identity;
+    public Rect lastRectValue = Rect.zero;
+    public Bounds lastBoundsValue = new Bounds();
 
     public void NoParameterMethod()
     {
@@ -174,6 +177,34 @@ public class TestMethodScript : MonoBehaviour
     public void DeepNestedClassParameterMethod(TestDeepNestedClass deepNested)
     {
         lastDeepNestedClass = deepNested;
+    }
+
+    public void QuaternionParameterMethod(Quaternion value)
+    {
+        lastQuaternionValue = value;
+    }
+
+    public void RectParameterMethod(Rect value)
+    {
+        lastRectValue = value;
+    }
+
+    public void BoundsParameterMethod(Bounds value)
+    {
+        lastBoundsValue = value;
+    }
+
+    public void NullableIntParameterMethod(int? value)
+    {
+        lastIntValue = value ?? -1;
+    }
+
+    public void ObjectParameterMethod(object value)
+    {
+        if (value is int intVal)
+            lastIntValue = intVal;
+        else if (value is string strVal)
+            lastStringValue = strVal;
     }
 }
 
