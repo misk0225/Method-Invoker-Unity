@@ -206,6 +206,28 @@ public class TestMethodScript : MonoBehaviour
         else if (value is string strVal)
             lastStringValue = strVal;
     }
+
+    // Private methods for testing private method invocation
+    private void PrivateNoParameterMethod()
+    {
+        noParamCalled = true;
+    }
+
+    private void PrivateIntParameterMethod(int value)
+    {
+        lastIntValue = value;
+    }
+
+    private void PrivateStringParameterMethod(string value)
+    {
+        lastStringValue = value;
+    }
+
+    private void PrivateMultipleParametersMethod(int intVal, string strVal)
+    {
+        lastIntValue = intVal;
+        lastStringValue = strVal;
+    }
 }
 
 public enum TestEnum

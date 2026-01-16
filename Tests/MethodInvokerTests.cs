@@ -848,5 +848,126 @@ namespace MethodInvoker.Tests
             // Refreshing should handle destroyed component gracefully
             Assert.DoesNotThrow(() => container.RefreshEntries(), "Should handle destroyed component");
         }
+
+        [Test]
+        public void Test_PrivateMethods_NotShownByDefault()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+            container.showPrivateMethods = false;
+            container.RefreshEntries();
+
+            var privateMethod = container.methodEntries.Find(m =>
+                m.DelegateInfo.Method?.Name == "PrivateNoParameterMethod");
+
+            Assert.IsNull(privateMethod, "Should not find private methods when showPrivateMethods is false");
+        }
+
+        [Test]
+        public void Test_PrivateMethods_ShownWhenEnabled()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+            container.showPrivateMethods = true;
+            container.RefreshEntries();
+
+            var privateMethod = container.methodEntries.Find(m =>
+                m.DelegateInfo.Method?.Name == "PrivateNoParameterMethod");
+
+            Assert.IsNotNull(privateMethod, "Should find private methods when showPrivateMethods is true");
+        }
+
+        [Test]
+        public void Test_PrivateMethod_NoParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+            container.showPrivateMethods = true;
+            container.RefreshEntries();
+
+            var privateMethod = container.methodEntries.Find(m =>
+                m.DelegateInfo.Method?.Name == "PrivateNoParameterMethod");
+
+            Assert.IsNotNull(privateMethod, "Should find PrivateNoParameterMethod");
+            Assert.DoesNotThrow(() => privateMethod.Invoke(), "Should invoke private method without error");
+            Assert.IsTrue(script.noParamCalled, "Private method should have been called");
+        }
+
+        [Test]
+        public void Test_PrivateMethod_WithIntParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+            container.showPrivateMethods = true;
+            container.RefreshEntries();
+
+            var privateMethod = container.methodEntries.Find(m =>
+                m.DelegateInfo.Method?.Name == "PrivateIntParameterMethod");
+
+            Assert.IsNotNull(privateMethod, "Should find PrivateIntParameterMethod");
+            Assert.IsNotNull(privateMethod.ParameterValues, "Should have parameter array");
+            Assert.AreEqual(1, privateMethod.ParameterValues.Length, "Should have 1 parameter");
+
+            privateMethod.ParameterValues[0] = 99;
+            Assert.DoesNotThrow(() => privateMethod.Invoke(), "Should invoke private method without error");
+            Assert.AreEqual(99, script.lastIntValue, "Should receive correct value from private method");
+        }
+
+        [Test]
+        public void Test_PrivateMethod_WithStringParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+            container.showPrivateMethods = true;
+            container.RefreshEntries();
+
+            var privateMethod = container.methodEntries.Find(m =>
+                m.DelegateInfo.Method?.Name == "PrivateStringParameterMethod");
+
+            Assert.IsNotNull(privateMethod, "Should find PrivateStringParameterMethod");
+            privateMethod.ParameterValues[0] = "private test";
+            privateMethod.Invoke();
+            Assert.AreEqual("private test", script.lastStringValue);
+        }
+
+        [Test]
+        public void Test_PrivateMethod_MultipleParameters_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+            container.showPrivateMethods = true;
+            container.RefreshEntries();
+
+            var privateMethod = container.methodEntries.Find(m =>
+                m.DelegateInfo.Method?.Name == "PrivateMultipleParametersMethod");
+
+            Assert.IsNotNull(privateMethod, "Should find PrivateMultipleParametersMethod");
+            Assert.AreEqual(2, privateMethod.ParameterValues.Length, "Should have 2 parameters");
+
+            privateMethod.ParameterValues[0] = 123;
+            privateMethod.ParameterValues[1] = "private multi";
+            privateMethod.Invoke();
+            Assert.AreEqual(123, script.lastIntValue);
+            Assert.AreEqual("private multi", script.lastStringValue);
+        }
+
+        [Test]
+        public void Test_TogglePrivateMethods_UpdatesList()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            // Initially disabled
+            container.showPrivateMethods = false;
+            container.RefreshEntries();
+            int publicCount = container.methodEntries.Count;
+
+            // Enable private methods
+            container.showPrivateMethods = true;
+            container.RefreshEntries();
+            int totalCount = container.methodEntries.Count;
+
+            Assert.Greater(totalCount, publicCount, "Should have more methods when private methods are enabled");
+        }
     }
 }

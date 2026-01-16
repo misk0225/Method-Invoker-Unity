@@ -36,6 +36,7 @@ namespace MethodInvoker
         private Vector2 scrollPosition;
         private SerializedObject serializedObject;
         private SerializedProperty containerProperty;
+        private bool showPrivateMethods = false;
         
         // State management for foldouts and constructor selection
         private static Dictionary<string, bool> foldoutStates = new Dictionary<string, bool>();
@@ -84,15 +85,16 @@ namespace MethodInvoker
             
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
             
-            // Draw header
-            var headerStyle = new GUIStyle(EditorStyles.toolbar);
-            GUILayout.BeginVertical(headerStyle);
-            GUILayout.Space(5);
+            // Draw header section
+            GUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Space(3);
             
             var oldColor = GUI.backgroundColor;
             GUI.backgroundColor = Color.cyan;
             EditorGUILayout.LabelField("Target GameObject", EditorStyles.boldLabel);
             GUI.backgroundColor = oldColor;
+            
+            GUILayout.Space(3);
             
             EditorGUI.BeginChangeCheck();
             target = (GameObject)EditorGUILayout.ObjectField(target, typeof(GameObject), true);
@@ -102,18 +104,33 @@ namespace MethodInvoker
                     container = new MethodContainer(target);
                 else
                     container.targetGameObject = target;
+                container.showPrivateMethods = showPrivateMethods;
                 container.RefreshEntries();
                 serializedObject.Update();
             }
             
             GUILayout.Space(5);
+            
+            // Add checkbox for showing private methods
+            EditorGUI.BeginChangeCheck();
+            showPrivateMethods = EditorGUILayout.Toggle("Show Private Methods", showPrivateMethods);
+            if (EditorGUI.EndChangeCheck())
+            {
+                if (container != null)
+                {
+                    container.showPrivateMethods = showPrivateMethods;
+                    container.RefreshEntries();
+                    serializedObject.Update();
+                }
+            }
+            
+            GUILayout.Space(3);
             GUILayout.EndVertical();
             
+            // Draw methods section
             if (target != null)
             {
-                GUILayout.Space(5);
-                DrawDivider(Color.green);
-                GUILayout.Space(5);
+                GUILayout.Space(8);
                 
                 if (container != null && container.methodEntries != null)
                 {

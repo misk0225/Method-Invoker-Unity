@@ -20,6 +20,8 @@ namespace MethodInvoker
 
         public List<MethodEntry> methodEntries = new List<MethodEntry>();
 
+        public bool showPrivateMethods = false;
+
         #endregion
 
         #region Constructor
@@ -44,11 +46,24 @@ namespace MethodInvoker
                 {
                     if (component == null) continue;
                     var type = component.GetType();
-                    var methodInfos = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+
+                    // Configure binding flags based on showPrivateMethods
+                    var bindingFlags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+                    if (showPrivateMethods)
+                    {
+                        bindingFlags |= BindingFlags.NonPublic;
+                    }
+
+                    var methodInfos = type.GetMethods(bindingFlags);
                     foreach (var methodInfo in methodInfos)
                     {
                         if (methodInfo.ReturnType != typeof(void))
                             continue;
+
+                        // Skip compiler-generated methods and special names
+                        if (methodInfo.IsSpecialName || methodInfo.Name.Contains("<") || methodInfo.Name.Contains(">"))
+                            continue;
+
                         var info = new DelegateInfo { Method = methodInfo, Target = component };
                         var newDelegate = CreateAndAssignNewDelegate(info);
                         methodEntries.Add(new MethodEntry(newDelegate, info));
@@ -66,10 +81,10 @@ namespace MethodInvoker
             var target = delInfo.Target;
             var parameters = method.GetParameters();
 
-            // Check if any parameter is by-reference (ref/out)
-            // Action/Func delegates don't support ref/out, so return null
+            // Check if any parameter is by-reference (ref/out) or pointer type
+            // Action/Func delegates don't support ref/out/pointer types, so return null
             // The method will be invoked using MethodInfo.Invoke instead
-            if (parameters.Any(p => p.ParameterType.IsByRef))
+            if (parameters.Any(p => p.ParameterType.IsByRef || p.ParameterType.IsPointer))
             {
                 return null;
             }
