@@ -264,6 +264,10 @@ namespace MethodInvoker
             if (method == null) return;
             
             GUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.BeginHorizontal();
+            
+            // Left side: Method name and parameters
+            GUILayout.BeginVertical();
             
             // Method name
             var methodFullName = method.ToString();
@@ -289,20 +293,22 @@ namespace MethodInvoker
                 
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField(param.Name, GUILayout.Width(120));
-                EditorGUILayout.EndHorizontal();
-                
                 methodEntry.ParameterValues[i] = DrawParameterField(
                     methodEntry.ParameterValues[i], 
                     param.ParameterType, 
                     paramPath);
+                EditorGUILayout.EndHorizontal();
             }
             
-            // Invoke button
-            if (GUILayout.Button("Invoke", GUILayout.Height(22)))
+            GUILayout.EndVertical();
+            
+            // Right side: Invoke button
+            if (GUILayout.Button("Invoke", GUILayout.Width(80), GUILayout.Height(parameters.Length > 0 ? 60 : 30)))
             {
                 methodEntry.Invoke();
             }
             
+            GUILayout.EndHorizontal();
             GUILayout.EndVertical();
         }
         
