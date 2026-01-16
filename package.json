@@ -1,6 +1,6 @@
 {
     "name": "com.misk.method-invoker",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "displayName": "Method Invoker",
     "description": "A Unity Editor tool for invoking methods on GameObjects at runtime and in edit mode. Provides a visual interface to call public methods with parameters.",
     "unity": "2020.3",
