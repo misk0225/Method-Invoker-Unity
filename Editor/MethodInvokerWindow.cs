@@ -54,17 +54,22 @@ namespace MethodInvoker
         {
             instance = GetWindow<MethodInvokerWindow>();
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            Selection.selectionChanged += OnSelectionChanged;
             
             if (container == null)
                 container = new MethodContainer(null);
                 
             serializedObject = new SerializedObject(this);
             containerProperty = serializedObject.FindProperty("container");
+            
+            // Initialize with current selection
+            OnSelectionChanged();
         }
 
         protected virtual void OnDisable()
         {
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            Selection.selectionChanged -= OnSelectionChanged;
         }
 
         protected virtual void OnGUI()
@@ -85,51 +90,49 @@ namespace MethodInvoker
             
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
             
-            // Draw header section
-            GUILayout.BeginVertical(EditorStyles.helpBox);
-            GUILayout.Space(3);
-            
-            var oldColor = GUI.backgroundColor;
-            GUI.backgroundColor = Color.cyan;
-            EditorGUILayout.LabelField("Target GameObject", EditorStyles.boldLabel);
-            GUI.backgroundColor = oldColor;
-            
-            GUILayout.Space(3);
-            
-            EditorGUI.BeginChangeCheck();
-            target = (GameObject)EditorGUILayout.ObjectField(target, typeof(GameObject), true);
-            if (EditorGUI.EndChangeCheck())
+            // If no target selected, show hint message
+            if (target == null)
             {
-                if (container == null)
-                    container = new MethodContainer(target);
-                else
-                    container.targetGameObject = target;
-                container.showPrivateMethods = showPrivateMethods;
-                container.RefreshEntries();
-                serializedObject.Update();
-            }
-            
-            GUILayout.Space(5);
-            
-            // Add checkbox for showing private methods
-            EditorGUI.BeginChangeCheck();
-            showPrivateMethods = EditorGUILayout.Toggle("Show Private Methods", showPrivateMethods);
-            if (EditorGUI.EndChangeCheck())
-            {
-                if (container != null)
+                GUILayout.FlexibleSpace();
+                
+                var hintStyle = new GUIStyle(EditorStyles.label)
                 {
-                    container.showPrivateMethods = showPrivateMethods;
-                    container.RefreshEntries();
-                    serializedObject.Update();
-                }
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize = 14,
+                    wordWrap = true,
+                    normal = { textColor = Color.gray }
+                };
+                
+                GUILayout.BeginHorizontal();
+                GUILayout.FlexibleSpace();
+                GUILayout.Label("+ Please Click GameObject in your Hierarchy or Scene view.", hintStyle);
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+                
+                GUILayout.FlexibleSpace();
             }
-            
-            GUILayout.Space(3);
-            GUILayout.EndVertical();
-            
-            // Draw methods section
-            if (target != null)
+            else
             {
+                // Show private methods checkbox when target is selected
+                GUILayout.BeginVertical(EditorStyles.helpBox);
+                GUILayout.Space(3);
+                
+                EditorGUI.BeginChangeCheck();
+                showPrivateMethods = EditorGUILayout.Toggle("Show Private Methods", showPrivateMethods);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    if (container != null)
+                    {
+                        container.showPrivateMethods = showPrivateMethods;
+                        container.RefreshEntries();
+                        serializedObject.Update();
+                    }
+                }
+                
+                GUILayout.Space(3);
+                GUILayout.EndVertical();
+                
+                // Draw methods section
                 GUILayout.Space(8);
                 
                 if (container != null && container.methodEntries != null)
@@ -557,6 +560,42 @@ namespace MethodInvoker
     #endregion
 
     #region Private Methods
+
+        private void OnSelectionChanged()
+        {
+            GameObject selectedObject = Selection.activeGameObject;
+            
+            // Update target (can be null)
+            if (selectedObject != target)
+            {
+                target = selectedObject;
+                
+                if (target != null)
+                {
+                    if (container == null)
+                        container = new MethodContainer(target);
+                    else
+                        container.targetGameObject = target;
+                        
+                    container.showPrivateMethods = showPrivateMethods;
+                    container.RefreshEntries();
+                }
+                else
+                {
+                    // Clear container when no selection
+                    if (container != null)
+                    {
+                        container.targetGameObject = null;
+                        container.methodEntries.Clear();
+                    }
+                }
+                
+                if (serializedObject != null)
+                    serializedObject.Update();
+                    
+                Repaint();
+            }
+        }
 
         private void OnPlayModeStateChanged(PlayModeStateChange change)
         {
