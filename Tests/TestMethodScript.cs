@@ -230,6 +230,41 @@ public class TestMethodScript : MonoBehaviour
     }
 }
 
+// Test components with complex generic types (Dictionary, HashSet, etc.)
+public class TestComponentWithDictionary : MonoBehaviour
+{
+    // Dictionary should not cause crashes during reflection
+    private System.Collections.Generic.Dictionary<int, string> testDictionary = new System.Collections.Generic.Dictionary<int, string>();
+
+    public void TestMethod()
+    {
+        // Simple method for testing
+    }
+}
+
+public class TestComponentWithHashSet : MonoBehaviour
+{
+    private System.Collections.Generic.HashSet<string> testHashSet = new System.Collections.Generic.HashSet<string>();
+
+    public void TestMethod()
+    {
+        // Simple method for testing
+    }
+}
+
+public class TestComponentWithComplexTypes : MonoBehaviour
+{
+    private System.Collections.Generic.Dictionary<string, TestCustomClass> complexDictionary;
+    private System.Collections.Generic.Queue<int> testQueue;
+    private System.Collections.Generic.Stack<string> testStack;
+    public bool methodCalled = false;
+
+    public void TestMethod()
+    {
+        methodCalled = true;
+    }
+}
+
 public enum TestEnum
 {
     Value1,

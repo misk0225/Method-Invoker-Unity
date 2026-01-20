@@ -1,6 +1,7 @@
 #region
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
@@ -150,37 +151,77 @@ namespace MethodInvoker
 
         private MethodEntry GetMethodEntry(SerializedProperty property)
         {
-            var targetObject = property.serializedObject.targetObject;
-            var path = property.propertyPath;
-            
-            if (string.IsNullOrEmpty(path)) return null;
-            
-            object obj = targetObject;
-            var elements = path.Split('.');
-            
-            foreach (var element in elements)
+            try
             {
-                if (obj == null) return null;
+                var targetObject = property.serializedObject.targetObject;
+                var path = property.propertyPath;
                 
-                if (element.Contains("["))
+                if (string.IsNullOrEmpty(path)) return null;
+                
+                object obj = targetObject;
+                var elements = path.Split('.');
+                
+                foreach (var element in elements)
                 {
-                    var elementName = element.Substring(0, element.IndexOf("["));
-                    var index = int.Parse(element.Substring(element.IndexOf("[") + 1, element.IndexOf("]") - element.IndexOf("[") - 1));
-                    var field = obj.GetType().GetField(elementName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (field == null) return null;
-                    var list = field.GetValue(obj) as System.Collections.IList;
-                    if (list == null || index >= list.Count) return null;
-                    obj = list[index];
+                    if (obj == null) return null;
+                    
+                    if (element.Contains("["))
+                    {
+                        var elementName = element.Substring(0, element.IndexOf("["));
+                        var index = int.Parse(element.Substring(element.IndexOf("[") + 1, element.IndexOf("]") - element.IndexOf("[") - 1));
+                        var field = obj.GetType().GetField(elementName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (field == null) return null;
+                        
+                        // Skip unsupported field types (Dictionary, etc.)
+                        if (IsUnsupportedType(field.FieldType))
+                        {
+                            return null;
+                        }
+                        
+                        var list = field.GetValue(obj) as System.Collections.IList;
+                        if (list == null || index >= list.Count) return null;
+                        obj = list[index];
+                    }
+                    else
+                    {
+                        var field = obj.GetType().GetField(element, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (field == null) return null;
+                        
+                        // Skip unsupported field types (Dictionary, etc.)
+                        if (IsUnsupportedType(field.FieldType))
+                        {
+                            return null;
+                        }
+                        
+                        obj = field.GetValue(obj);
+                    }
                 }
-                else
+                
+                return obj as MethodEntry;
+            }
+            catch (Exception e)
+            {
+                // Silently catch reflection errors to prevent Unity crash
+                Debug.LogWarning($"[MethodInvoker] Failed to get MethodEntry: {e.Message}");
+                return null;
+            }
+        }
+        
+        private bool IsUnsupportedType(Type type)
+        {
+            // Check for Dictionary and other problematic generic types
+            if (type.IsGenericType)
+            {
+                var genericTypeDef = type.GetGenericTypeDefinition();
+                if (genericTypeDef == typeof(Dictionary<,>) ||
+                    genericTypeDef == typeof(System.Collections.Generic.HashSet<>) ||
+                    genericTypeDef == typeof(System.Collections.Generic.Queue<>) ||
+                    genericTypeDef == typeof(System.Collections.Generic.Stack<>))
                 {
-                    var field = obj.GetType().GetField(element, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (field == null) return null;
-                    obj = field.GetValue(obj);
+                    return true;
                 }
             }
-            
-            return obj as MethodEntry;
+            return false;
         }
         
         private object DrawParameterFieldInternal(Rect rect, string label, object value, Type type, string parameterPath)

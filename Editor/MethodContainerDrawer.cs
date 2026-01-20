@@ -1,5 +1,6 @@
 #region
 
+using System.Collections.Generic;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -216,73 +217,136 @@ namespace MethodInvoker
 
         private MethodContainer GetMethodContainer(SerializedProperty property)
         {
-            var targetObject = property.serializedObject.targetObject;
-            var path = property.propertyPath;
-            
-            if (string.IsNullOrEmpty(path))
-                return null;
-            
-            object obj = targetObject;
-            var elements = path.Split('.');
-            
-            foreach (var element in elements)
+            try
             {
-                if (obj == null) return null;
+                var targetObject = property.serializedObject.targetObject;
+                var path = property.propertyPath;
                 
-                if (element.Contains("["))
+                if (string.IsNullOrEmpty(path))
+                    return null;
+                
+                object obj = targetObject;
+                var elements = path.Split('.');
+                
+                foreach (var element in elements)
                 {
-                    var elementName = element.Substring(0, element.IndexOf("["));
-                    var index = int.Parse(element.Substring(element.IndexOf("[") + 1, element.IndexOf("]") - element.IndexOf("[") - 1));
-                    var field = obj.GetType().GetField(elementName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    if (field == null) return null;
-                    var list = field.GetValue(obj) as System.Collections.IList;
-                    if (list == null || index >= list.Count) return null;
-                    obj = list[index];
+                    if (obj == null) return null;
+                    
+                    if (element.Contains("["))
+                    {
+                        var elementName = element.Substring(0, element.IndexOf("["));
+                        var index = int.Parse(element.Substring(element.IndexOf("[") + 1, element.IndexOf("]") - element.IndexOf("[") - 1));
+                        var field = obj.GetType().GetField(elementName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        if (field == null) return null;
+                        
+                        // Skip unsupported field types
+                        if (IsUnsupportedType(field.FieldType))
+                        {
+                            return null;
+                        }
+                        
+                        var list = field.GetValue(obj) as System.Collections.IList;
+                        if (list == null || index >= list.Count) return null;
+                        obj = list[index];
+                    }
+                    else
+                    {
+                        var field = obj.GetType().GetField(element, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        if (field == null) return null;
+                        
+                        // Skip unsupported field types
+                        if (IsUnsupportedType(field.FieldType))
+                        {
+                            return null;
+                        }
+                        
+                        obj = field.GetValue(obj);
+                    }
                 }
-                else
-                {
-                    var field = obj.GetType().GetField(element, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    if (field == null) return null;
-                    obj = field.GetValue(obj);
-                }
+                
+                return obj as MethodContainer;
             }
-            
-            return obj as MethodContainer;
+            catch (System.Exception e)
+            {
+                // Silently catch reflection errors to prevent Unity crash
+                UnityEngine.Debug.LogWarning($"[MethodInvoker] Failed to get MethodContainer: {e.Message}");
+                return null;
+            }
         }
 
         private MethodEntry GetMethodEntryFromProperty(SerializedProperty property)
         {
-            var targetObject = property.serializedObject.targetObject;
-            var path = property.propertyPath;
-            
-            if (string.IsNullOrEmpty(path)) return null;
-            
-            object obj = targetObject;
-            var elements = path.Split('.');
-            
-            foreach (var element in elements)
+            try
             {
-                if (obj == null) return null;
+                var targetObject = property.serializedObject.targetObject;
+                var path = property.propertyPath;
                 
-                if (element.Contains("["))
+                if (string.IsNullOrEmpty(path)) return null;
+                
+                object obj = targetObject;
+                var elements = path.Split('.');
+                
+                foreach (var element in elements)
                 {
-                    var elementName = element.Substring(0, element.IndexOf("["));
-                    var index = int.Parse(element.Substring(element.IndexOf("[") + 1, element.IndexOf("]") - element.IndexOf("[") - 1));
-                    var field = obj.GetType().GetField(elementName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    if (field == null) return null;
-                    var list = field.GetValue(obj) as System.Collections.IList;
-                    if (list == null || index >= list.Count) return null;
-                    obj = list[index];
+                    if (obj == null) return null;
+                    
+                    if (element.Contains("["))
+                    {
+                        var elementName = element.Substring(0, element.IndexOf("["));
+                        var index = int.Parse(element.Substring(element.IndexOf("[") + 1, element.IndexOf("]") - element.IndexOf("[") - 1));
+                        var field = obj.GetType().GetField(elementName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        if (field == null) return null;
+                        
+                        // Skip unsupported field types (Dictionary, etc.)
+                        if (IsUnsupportedType(field.FieldType))
+                        {
+                            return null;
+                        }
+                        
+                        var list = field.GetValue(obj) as System.Collections.IList;
+                        if (list == null || index >= list.Count) return null;
+                        obj = list[index];
+                    }
+                    else
+                    {
+                        var field = obj.GetType().GetField(element, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        if (field == null) return null;
+                        
+                        // Skip unsupported field types (Dictionary, etc.)
+                        if (IsUnsupportedType(field.FieldType))
+                        {
+                            return null;
+                        }
+                        
+                        obj = field.GetValue(obj);
+                    }
                 }
-                else
+                
+                return obj as MethodEntry;
+            }
+            catch (System.Exception e)
+            {
+                // Silently catch reflection errors to prevent Unity crash
+                UnityEngine.Debug.LogWarning($"[MethodInvoker] Failed to get MethodEntry from property: {e.Message}");
+                return null;
+            }
+        }
+        
+        private bool IsUnsupportedType(System.Type type)
+        {
+            // Check for Dictionary and other problematic generic types
+            if (type.IsGenericType)
+            {
+                var genericTypeDef = type.GetGenericTypeDefinition();
+                if (genericTypeDef == typeof(System.Collections.Generic.Dictionary<,>) ||
+                    genericTypeDef == typeof(System.Collections.Generic.HashSet<>) ||
+                    genericTypeDef == typeof(System.Collections.Generic.Queue<>) ||
+                    genericTypeDef == typeof(System.Collections.Generic.Stack<>))
                 {
-                    var field = obj.GetType().GetField(element, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    if (field == null) return null;
-                    obj = field.GetValue(obj);
+                    return true;
                 }
             }
-            
-            return obj as MethodEntry;
+            return false;
         }
 
     #endregion

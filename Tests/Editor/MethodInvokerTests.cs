@@ -969,5 +969,46 @@ namespace MethodInvoker.Tests
 
             Assert.Greater(totalCount, publicCount, "Should have more methods when private methods are enabled");
         }
+
+        [Test]
+        public void Test_ComponentWithDictionary_DoesNotCrash()
+        {
+            // Test that components with Dictionary fields don't cause crashes
+            var script = testObject.AddComponent<TestComponentWithDictionary>();
+            var container = new MethodContainer(testObject);
+
+            // Should successfully create container without crashing
+            Assert.IsNotNull(container, "Container should be created even with Dictionary fields");
+            Assert.IsNotNull(container.methodEntries, "Method entries should be initialized");
+
+            // Should find methods on the component
+            Assert.Greater(container.methodEntries.Count, 0, "Should find methods on component with Dictionary");
+        }
+
+        [Test]
+        public void Test_ComponentWithHashSet_DoesNotCrash()
+        {
+            var script = testObject.AddComponent<TestComponentWithHashSet>();
+            var container = new MethodContainer(testObject);
+
+            Assert.IsNotNull(container, "Container should be created even with HashSet fields");
+            Assert.Greater(container.methodEntries.Count, 0, "Should find methods on component with HashSet");
+        }
+
+        [Test]
+        public void Test_ComponentWithComplexGenericTypes_DoesNotCrash()
+        {
+            var script = testObject.AddComponent<TestComponentWithComplexTypes>();
+            var container = new MethodContainer(testObject);
+
+            Assert.IsNotNull(container, "Container should be created even with complex generic fields");
+            Assert.Greater(container.methodEntries.Count, 0, "Should find methods on component with complex types");
+
+            // Verify we can invoke a method
+            var method = container.methodEntries.Find(m => m.Delegate?.Method?.Name == "TestMethod");
+            Assert.IsNotNull(method, "Should find TestMethod");
+            Assert.DoesNotThrow(() => method.Invoke(), "Should invoke method without crashing");
+            Assert.IsTrue(script.methodCalled, "Method should have been invoked");
+        }
     }
 }
