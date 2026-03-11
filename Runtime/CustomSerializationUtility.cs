@@ -1,6 +1,7 @@
 #region
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -103,6 +104,56 @@ namespace MethodInvoker
                     var actualElementType = element != null ? element.GetType() : elementType;
                     SerializeObject(element, actualElementType, writer, unityRefs);
                 }
+                return;
+            }
+
+            // List<T>
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
+            {
+                writer.Write((byte)SerializationType.List);
+
+                var listType = obj.GetType();
+                var elementType = listType.GetGenericArguments()[0];
+                var list = (IList)obj;
+
+                writer.Write(listType.AssemblyQualifiedName);
+                writer.Write(elementType.AssemblyQualifiedName);
+                writer.Write(list.Count);
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var element = list[i];
+                    var actualElementType = element != null ? element.GetType() : elementType;
+                    SerializeObject(element, actualElementType, writer, unityRefs);
+                }
+
+                return;
+            }
+
+            // Dictionary<TKey, TValue>
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+            {
+                writer.Write((byte)SerializationType.Dictionary);
+
+                var dictionaryType = obj.GetType();
+                var genericArgs = dictionaryType.GetGenericArguments();
+                var keyType = genericArgs[0];
+                var valueType = genericArgs[1];
+                var dictionary = (IDictionary)obj;
+
+                writer.Write(dictionaryType.AssemblyQualifiedName);
+                writer.Write(keyType.AssemblyQualifiedName);
+                writer.Write(valueType.AssemblyQualifiedName);
+                writer.Write(dictionary.Count);
+
+                foreach (DictionaryEntry entry in dictionary)
+                {
+                    var keyActualType = entry.Key != null ? entry.Key.GetType() : keyType;
+                    var valueActualType = entry.Value != null ? entry.Value.GetType() : valueType;
+                    SerializeObject(entry.Key, keyActualType, writer, unityRefs);
+                    SerializeObject(entry.Value, valueActualType, writer, unityRefs);
+                }
+
                 return;
             }
 
@@ -263,6 +314,60 @@ namespace MethodInvoker
                 return array;
             }
 
+            if (serializationType == SerializationType.List)
+            {
+                var listTypeName = reader.ReadString();
+                var elementTypeName = reader.ReadString();
+                var count = reader.ReadInt32();
+
+                var listType = Type.GetType(listTypeName) ?? type;
+                var elementType = Type.GetType(elementTypeName);
+                if (elementType == null) return null;
+
+                var listInstance = Activator.CreateInstance(listType) as IList;
+                if (listInstance == null)
+                {
+                    var fallbackListType = typeof(List<>).MakeGenericType(elementType);
+                    listInstance = Activator.CreateInstance(fallbackListType) as IList;
+                }
+
+                for (int i = 0; i < count; i++)
+                {
+                    listInstance.Add(DeserializeObject(elementType, reader, unityRefs));
+                }
+
+                return listInstance;
+            }
+
+            if (serializationType == SerializationType.Dictionary)
+            {
+                var dictionaryTypeName = reader.ReadString();
+                var keyTypeName = reader.ReadString();
+                var valueTypeName = reader.ReadString();
+                var count = reader.ReadInt32();
+
+                var dictionaryType = Type.GetType(dictionaryTypeName) ?? type;
+                var keyType = Type.GetType(keyTypeName);
+                var valueType = Type.GetType(valueTypeName);
+                if (keyType == null || valueType == null) return null;
+
+                var dictionaryInstance = Activator.CreateInstance(dictionaryType) as IDictionary;
+                if (dictionaryInstance == null)
+                {
+                    var fallbackDictionaryType = typeof(Dictionary<,>).MakeGenericType(keyType, valueType);
+                    dictionaryInstance = Activator.CreateInstance(fallbackDictionaryType) as IDictionary;
+                }
+
+                for (int i = 0; i < count; i++)
+                {
+                    var key = DeserializeObject(keyType, reader, unityRefs);
+                    var value = DeserializeObject(valueType, reader, unityRefs);
+                    dictionaryInstance.Add(key, value);
+                }
+
+                return dictionaryInstance;
+            }
+
             if (serializationType == SerializationType.Delegate)
             {
                 // Deserialize target
@@ -385,7 +490,9 @@ namespace MethodInvoker
             Array = 15,
             Delegate = 16,
             Enum = 17,
-            ComplexType = 18
+            ComplexType = 18,
+            List = 19,
+            Dictionary = 20
         }
 
         #endregion

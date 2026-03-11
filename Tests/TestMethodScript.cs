@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using System.Collections.Generic;
 
 // Test custom class for complex parameter testing
 [System.Serializable]
@@ -90,6 +91,10 @@ public class TestMethodScript : MonoBehaviour
     public Quaternion lastQuaternionValue = Quaternion.identity;
     public Rect lastRectValue = Rect.zero;
     public Bounds lastBoundsValue = new Bounds();
+    public List<int> lastIntList = null;
+    public List<TestCustomClass> lastCustomClassList = null;
+    public Dictionary<string, int> lastStringIntDictionary = null;
+    public Dictionary<string, TestCustomClass> lastComplexDictionary = null;
 
     public void NoParameterMethod()
     {
@@ -194,6 +199,26 @@ public class TestMethodScript : MonoBehaviour
         lastBoundsValue = value;
     }
 
+    public void IntListParameterMethod(List<int> values)
+    {
+        lastIntList = values;
+    }
+
+    public void CustomClassListParameterMethod(List<TestCustomClass> values)
+    {
+        lastCustomClassList = values;
+    }
+
+    public void DictionaryParameterMethod(Dictionary<string, int> values)
+    {
+        lastStringIntDictionary = values;
+    }
+
+    public void ComplexDictionaryParameterMethod(Dictionary<string, TestCustomClass> values)
+    {
+        lastComplexDictionary = values;
+    }
+
     public void NullableIntParameterMethod(int? value)
     {
         lastIntValue = value ?? -1;
@@ -228,6 +253,10 @@ public class TestMethodScript : MonoBehaviour
         lastIntValue = intVal;
         lastStringValue = strVal;
     }
+
+    public void TestContructerRecursionMethod(TestContructerRecursion param)
+    {
+    }
 }
 
 // Test components with complex generic types (Dictionary, HashSet, etc.)
@@ -239,6 +268,13 @@ public class TestComponentWithDictionary : MonoBehaviour
     public void TestMethod()
     {
         // Simple method for testing
+    }
+}
+
+public class TestContructerRecursion
+{
+    public TestContructerRecursion(TestContructerRecursion param)
+    {
     }
 }
 

@@ -1,6 +1,7 @@
 #region
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -328,6 +329,18 @@ namespace MethodInvoker
             {
                 return DrawArrayField(value, type, parameterPath);
             }
+
+            // Handle List<T>
+            if (IsListType(type))
+            {
+                return DrawListField(value, type, parameterPath);
+            }
+
+            // Handle Dictionary<TKey, TValue>
+            if (IsDictionaryType(type))
+            {
+                return DrawDictionaryField(value, type, parameterPath);
+            }
             
             // Handle complex types (classes/structs)
             if ((type.IsClass || (type.IsValueType && !type.IsPrimitive)) &&
@@ -420,6 +433,229 @@ namespace MethodInvoker
             EditorGUILayout.EndVertical();
             return array;
         }
+
+        private object DrawListField(object value, Type listType, string parameterPath)
+        {
+            Type elementType = listType.GetGenericArguments()[0];
+            IList list = value as IList;
+
+            if (list == null)
+            {
+                list = Activator.CreateInstance(listType) as IList;
+            }
+
+            string foldoutKey = parameterPath + "_list";
+            if (!foldoutStates.ContainsKey(foldoutKey))
+                foldoutStates[foldoutKey] = false;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            foldoutStates[foldoutKey] = EditorGUILayout.Foldout(foldoutStates[foldoutKey], $"List<{elementType.Name}> [{list.Count}]");
+
+            if (foldoutStates[foldoutKey])
+            {
+                EditorGUI.indentLevel++;
+
+                EditorGUILayout.BeginHorizontal();
+                int newSize = EditorGUILayout.IntField("Size", list.Count);
+                if (GUILayout.Button("+", GUILayout.Width(30)))
+                {
+                    list.Add(GetDefaultValue(elementType));
+                }
+                if (GUILayout.Button("-", GUILayout.Width(30)) && list.Count > 0)
+                {
+                    list.RemoveAt(list.Count - 1);
+                }
+                EditorGUILayout.EndHorizontal();
+
+                if (newSize != list.Count && newSize >= 0)
+                {
+                    while (list.Count < newSize)
+                    {
+                        list.Add(GetDefaultValue(elementType));
+                    }
+
+                    while (list.Count > newSize)
+                    {
+                        list.RemoveAt(list.Count - 1);
+                    }
+                }
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    string elementPath = $"{parameterPath}_list_{i}";
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField($"Element {i}", GUILayout.Width(80));
+                    list[i] = DrawParameterField(list[i], elementType, elementPath);
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.EndVertical();
+            return list;
+        }
+
+        private object DrawDictionaryField(object value, Type dictionaryType, string parameterPath)
+        {
+            var genericArgs = dictionaryType.GetGenericArguments();
+            var keyType = genericArgs[0];
+            var valueType = genericArgs[1];
+            IDictionary dictionary = value as IDictionary;
+
+            if (dictionary == null)
+            {
+                dictionary = Activator.CreateInstance(dictionaryType) as IDictionary;
+            }
+
+            string foldoutKey = parameterPath + "_dict";
+            if (!foldoutStates.ContainsKey(foldoutKey))
+                foldoutStates[foldoutKey] = false;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            foldoutStates[foldoutKey] = EditorGUILayout.Foldout(foldoutStates[foldoutKey], $"Dictionary<{keyType.Name}, {valueType.Name}> [{dictionary.Count}]");
+
+            if (foldoutStates[foldoutKey])
+            {
+                EditorGUI.indentLevel++;
+
+                EditorGUILayout.BeginHorizontal();
+                int newSize = EditorGUILayout.IntField("Size", dictionary.Count);
+                if (GUILayout.Button("+", GUILayout.Width(30)))
+                {
+                    var newKey = CreateDefaultDictionaryKey(keyType, dictionary);
+                    if ((newKey != null || keyType.IsValueType) && !dictionary.Contains(newKey))
+                    {
+                        dictionary.Add(newKey, GetDefaultValue(valueType));
+                    }
+                }
+                if (GUILayout.Button("-", GUILayout.Width(30)) && dictionary.Count > 0)
+                {
+                    var keys = dictionary.Keys.Cast<object>().ToList();
+                    dictionary.Remove(keys[keys.Count - 1]);
+                }
+                EditorGUILayout.EndHorizontal();
+
+                if (newSize != dictionary.Count && newSize >= 0)
+                {
+                    while (dictionary.Count > newSize)
+                    {
+                        var keys = dictionary.Keys.Cast<object>().ToList();
+                        if (keys.Count == 0) break;
+                        dictionary.Remove(keys[keys.Count - 1]);
+                    }
+
+                    while (dictionary.Count < newSize)
+                    {
+                        var newKey = CreateDefaultDictionaryKey(keyType, dictionary);
+                        if (newKey == null && !keyType.IsValueType) break;
+                        if (dictionary.Contains(newKey)) break;
+                        dictionary.Add(newKey, GetDefaultValue(valueType));
+                    }
+                }
+
+                var keySnapshot = dictionary.Keys.Cast<object>().ToList();
+                for (int i = 0; i < keySnapshot.Count; i++)
+                {
+                    var oldKey = keySnapshot[i];
+                    var oldValue = dictionary[oldKey];
+
+                    string keyPath = $"{parameterPath}_dict_{i}_key";
+                    string valuePath = $"{parameterPath}_dict_{i}_value";
+
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField($"Key {i}", GUILayout.Width(80));
+                    var newKey = DrawParameterField(oldKey, keyType, keyPath);
+                    EditorGUILayout.EndHorizontal();
+
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField($"Value {i}", GUILayout.Width(80));
+                    var newValue = DrawParameterField(oldValue, valueType, valuePath);
+                    EditorGUILayout.EndHorizontal();
+
+                    bool keyChanged = !Equals(newKey, oldKey);
+                    if (keyChanged)
+                    {
+                        if (newKey == null && !keyType.IsValueType)
+                        {
+                            dictionary[oldKey] = newValue;
+                            continue;
+                        }
+
+                        if (dictionary.Contains(newKey))
+                        {
+                            dictionary[oldKey] = newValue;
+                            continue;
+                        }
+
+                        dictionary.Remove(oldKey);
+                        dictionary[newKey] = newValue;
+                    }
+                    else
+                    {
+                        dictionary[oldKey] = newValue;
+                    }
+                }
+
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUILayout.EndVertical();
+            return dictionary;
+        }
+
+        private static bool IsListType(Type type)
+        {
+            return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>);
+        }
+
+        private static bool IsDictionaryType(Type type)
+        {
+            return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>);
+        }
+
+        private object CreateDefaultDictionaryKey(Type keyType, IDictionary dictionary)
+        {
+            if (keyType == typeof(string))
+            {
+                int index = 1;
+                string candidate;
+                do
+                {
+                    candidate = $"Key{index}";
+                    index++;
+                } while (dictionary.Contains(candidate));
+
+                return candidate;
+            }
+
+            if (keyType == typeof(int))
+            {
+                int candidate = 0;
+                while (dictionary.Contains(candidate))
+                {
+                    candidate++;
+                }
+
+                return candidate;
+            }
+
+            if (keyType.IsEnum)
+            {
+                foreach (var enumValue in Enum.GetValues(keyType))
+                {
+                    if (!dictionary.Contains(enumValue))
+                    {
+                        return enumValue;
+                    }
+                }
+
+                return null;
+            }
+
+            var defaultKey = GetDefaultValue(keyType);
+            return dictionary.Contains(defaultKey) ? null : defaultKey;
+        }
         
         private object DrawComplexTypeField(object value, Type type, string parameterPath)
         {
@@ -439,6 +675,21 @@ namespace MethodInvoker
                 if (constructors.Length == 0)
                 {
                     EditorGUILayout.LabelField("No public constructors");
+                    EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.EndVertical();
+                    return null;
+                }
+                
+                // Check if all constructors have recursive parameters
+                bool allConstructorsRecursive = constructors.All(ctor =>
+                {
+                    var parameters = ctor.GetParameters();
+                    return parameters.Length > 0 && parameters.Any(p => p.ParameterType == type || p.ParameterType == type.MakeByRefType());
+                });
+                
+                if (allConstructorsRecursive)
+                {
+                    EditorGUILayout.LabelField("(Recursive constructor - cannot instantiate)");
                     EditorGUILayout.EndHorizontal();
                     EditorGUILayout.EndVertical();
                     return null;
@@ -554,6 +805,28 @@ namespace MethodInvoker
             {
                 return Activator.CreateInstance(type);
             }
+            
+            // For reference types, try to create instance with parameterless constructor
+            try
+            {
+                // Check if type has a parameterless constructor
+                var constructor = type.GetConstructor(
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+                    
+                if (constructor != null)
+                {
+                    return Activator.CreateInstance(type);
+                }
+            }
+            catch (Exception ex)
+            {
+                // If creation fails (e.g., recursive constructor), log and return null
+                Debug.LogWarning($"Cannot create default instance of type {type.Name}: {ex.Message}");
+            }
+            
             return null;
         }
 

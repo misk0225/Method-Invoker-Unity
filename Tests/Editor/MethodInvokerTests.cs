@@ -758,6 +758,129 @@ namespace MethodInvoker.Tests
             Assert.AreEqual(testBounds.size, script.lastBoundsValue.size, "Bounds size should match");
         }
 
+        [Test]
+        public void Test_IntListParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "IntListParameterMethod");
+
+            Assert.IsNotNull(method, "Should find IntListParameterMethod");
+
+            var testList = new List<int> { 3, 6, 9 };
+            method.ParameterValues[0] = testList;
+            method.Invoke();
+
+            Assert.IsNotNull(script.lastIntList, "List should not be null");
+            Assert.AreEqual(3, script.lastIntList.Count, "List count should match");
+            Assert.AreEqual(3, script.lastIntList[0], "First element should match");
+            Assert.AreEqual(9, script.lastIntList[2], "Last element should match");
+        }
+
+        [Test]
+        public void Test_DictionaryParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "DictionaryParameterMethod");
+
+            Assert.IsNotNull(method, "Should find DictionaryParameterMethod");
+
+            var testDictionary = new Dictionary<string, int>
+            {
+                ["apple"] = 1,
+                ["banana"] = 2
+            };
+
+            method.ParameterValues[0] = testDictionary;
+            method.Invoke();
+
+            Assert.IsNotNull(script.lastStringIntDictionary, "Dictionary should not be null");
+            Assert.AreEqual(2, script.lastStringIntDictionary.Count, "Dictionary count should match");
+            Assert.IsTrue(script.lastStringIntDictionary.ContainsKey("apple"), "Should contain key 'apple'");
+            Assert.AreEqual(1, script.lastStringIntDictionary["apple"], "Value for 'apple' should match");
+        }
+
+        [Test]
+        public void Test_ListSerialization_PreservesElements()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var del = new Action<List<int>>(script.IntListParameterMethod);
+            var delInfo = new DelegateInfo { Method = del.Method, Target = script };
+            var entry = new MethodEntry(del, delInfo);
+
+            entry.ParameterValues[0] = new List<int> { 10, 20, 30, 40 };
+
+            entry.OnBeforeSerialize();
+            entry.OnAfterDeserialize();
+
+            Assert.IsNotNull(entry.ParameterValues, "Parameters should be restored");
+            Assert.IsInstanceOf<List<int>>(entry.ParameterValues[0], "Should preserve List<int> type");
+
+            var deserializedList = entry.ParameterValues[0] as List<int>;
+            Assert.IsNotNull(deserializedList, "Deserialized list should not be null");
+            Assert.AreEqual(4, deserializedList.Count, "List count should be preserved");
+            Assert.AreEqual(10, deserializedList[0], "First element should be preserved");
+            Assert.AreEqual(40, deserializedList[3], "Last element should be preserved");
+        }
+
+        [Test]
+        public void Test_DictionarySerialization_PreservesEntries()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var del = new Action<Dictionary<string, int>>(script.DictionaryParameterMethod);
+            var delInfo = new DelegateInfo { Method = del.Method, Target = script };
+            var entry = new MethodEntry(del, delInfo);
+
+            entry.ParameterValues[0] = new Dictionary<string, int>
+            {
+                ["one"] = 1,
+                ["two"] = 2,
+                ["three"] = 3
+            };
+
+            entry.OnBeforeSerialize();
+            entry.OnAfterDeserialize();
+
+            Assert.IsNotNull(entry.ParameterValues, "Parameters should be restored");
+            Assert.IsInstanceOf<Dictionary<string, int>>(entry.ParameterValues[0], "Should preserve dictionary type");
+
+            var deserializedDictionary = entry.ParameterValues[0] as Dictionary<string, int>;
+            Assert.IsNotNull(deserializedDictionary, "Deserialized dictionary should not be null");
+            Assert.AreEqual(3, deserializedDictionary.Count, "Dictionary count should be preserved");
+            Assert.IsTrue(deserializedDictionary.ContainsKey("two"), "Should preserve key 'two'");
+            Assert.AreEqual(2, deserializedDictionary["two"], "Value for key 'two' should be preserved");
+        }
+
+        [Test]
+        public void Test_ComplexDictionarySerialization_PreservesEntries()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var del = new Action<Dictionary<string, TestCustomClass>>(script.ComplexDictionaryParameterMethod);
+            var delInfo = new DelegateInfo { Method = del.Method, Target = script };
+            var entry = new MethodEntry(del, delInfo);
+
+            entry.ParameterValues[0] = new Dictionary<string, TestCustomClass>
+            {
+                ["left"] = new TestCustomClass(11, "alpha"),
+                ["right"] = new TestCustomClass(22, "beta")
+            };
+
+            entry.OnBeforeSerialize();
+            entry.OnAfterDeserialize();
+
+            var deserializedDictionary = entry.ParameterValues[0] as Dictionary<string, TestCustomClass>;
+            Assert.IsNotNull(deserializedDictionary, "Deserialized dictionary should not be null");
+            Assert.AreEqual(2, deserializedDictionary.Count, "Dictionary count should be preserved");
+            Assert.IsNotNull(deserializedDictionary["left"], "Nested class value should not be null");
+            Assert.AreEqual(11, deserializedDictionary["left"].intField, "Nested int field should be preserved");
+            Assert.AreEqual("beta", deserializedDictionary["right"].stringField, "Nested string field should be preserved");
+        }
+
         // ====== 新增測試：錯誤處理 ======
 
         [Test]
@@ -1009,6 +1132,46 @@ namespace MethodInvoker.Tests
             Assert.IsNotNull(method, "Should find TestMethod");
             Assert.DoesNotThrow(() => method.Invoke(), "Should invoke method without crashing");
             Assert.IsTrue(script.methodCalled, "Method should have been invoked");
+        }
+
+        [Test]
+        public void Test_RecursiveConstructor_DoesNotCrash()
+        {
+            // Test that methods with parameters that have recursive constructors don't cause crashes
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            // Should successfully create container without crashing
+            Assert.IsNotNull(container, "Container should be created even with recursive constructor parameters");
+            Assert.IsNotNull(container.methodEntries, "Method entries should be initialized");
+
+            // Find the method that takes TestContructerRecursion as parameter
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "TestContructerRecursionMethod");
+
+            // Should find the method
+            Assert.IsNotNull(method, "Should find TestContructerRecursionMethod");
+
+            // Parameter value should be null (since we can't create instance without recursion)
+            Assert.IsNotNull(method.ParameterValues, "Should have parameter array");
+            Assert.AreEqual(1, method.ParameterValues.Length, "Should have 1 parameter");
+            Assert.IsNull(method.ParameterValues[0], "Parameter with recursive constructor should default to null");
+        }
+
+        [Test]
+        public void Test_RecursiveConstructor_CanInvokeWithNull()
+        {
+            // Verify we can still invoke the method with null parameter
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "TestContructerRecursionMethod");
+
+            Assert.IsNotNull(method, "Should find TestContructerRecursionMethod");
+
+            // Should be able to invoke with null parameter without crashing
+            Assert.DoesNotThrow(() => method.Invoke(), "Should invoke method with null parameter without crashing");
         }
     }
 }

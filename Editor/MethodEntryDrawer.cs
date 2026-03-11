@@ -1,6 +1,7 @@
 #region
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -223,6 +224,16 @@ namespace MethodInvoker
             }
             return false;
         }
+
+        private static bool IsListType(Type type)
+        {
+            return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>);
+        }
+
+        private static bool IsDictionaryType(Type type)
+        {
+            return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>);
+        }
         
         private object DrawParameterFieldInternal(Rect rect, string label, object value, Type type, string parameterPath)
         {
@@ -236,6 +247,18 @@ namespace MethodInvoker
             if (type.IsArray)
             {
                 return DrawArrayField(rect, label, value, type, parameterPath);
+            }
+
+            // Check for List<T>
+            if (IsListType(type))
+            {
+                return DrawListField(rect, label, value, type, parameterPath);
+            }
+
+            // Check for Dictionary<TKey, TValue>
+            if (IsDictionaryType(type))
+            {
+                return DrawDictionaryField(rect, label, value, type, parameterPath);
             }
             
             // Check for complex types (classes/structs that aren't primitives or Unity types)
@@ -361,6 +384,227 @@ namespace MethodInvoker
             
             return array;
         }
+
+        private object DrawListField(Rect rect, string label, object value, Type listType, string parameterPath)
+        {
+            Type elementType = listType.GetGenericArguments()[0];
+            IList list = value as IList;
+
+            if (list == null)
+            {
+                list = Activator.CreateInstance(listType) as IList;
+            }
+
+            string foldoutKey = parameterPath + "_list";
+            if (!foldoutStates.ContainsKey(foldoutKey))
+                foldoutStates[foldoutKey] = false;
+
+            var foldoutRect = new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight);
+            foldoutStates[foldoutKey] = EditorGUI.Foldout(foldoutRect, foldoutStates[foldoutKey], $"{label} List<{elementType.Name}> [{list.Count}]");
+
+            float currentY = rect.y + EditorGUIUtility.singleLineHeight + Spacing;
+
+            if (foldoutStates[foldoutKey])
+            {
+                var controlsRect = new Rect(rect.x + 20, currentY, rect.width - 20, EditorGUIUtility.singleLineHeight);
+                var sizeRect = new Rect(controlsRect.x, controlsRect.y, controlsRect.width - 70, controlsRect.height);
+                var addRect = new Rect(controlsRect.x + controlsRect.width - 65, controlsRect.y, 30, controlsRect.height);
+                var removeRect = new Rect(controlsRect.x + controlsRect.width - 30, controlsRect.y, 30, controlsRect.height);
+
+                int newSize = EditorGUI.IntField(sizeRect, "Size", list.Count);
+                if (newSize != list.Count && newSize >= 0)
+                {
+                    while (list.Count < newSize)
+                    {
+                        list.Add(GetDefaultValue(elementType));
+                    }
+
+                    while (list.Count > newSize)
+                    {
+                        list.RemoveAt(list.Count - 1);
+                    }
+                }
+
+                if (GUI.Button(addRect, "+"))
+                {
+                    list.Add(GetDefaultValue(elementType));
+                }
+
+                if (GUI.Button(removeRect, "-") && list.Count > 0)
+                {
+                    list.RemoveAt(list.Count - 1);
+                }
+
+                currentY += EditorGUIUtility.singleLineHeight + Spacing;
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    string elementPath = $"{parameterPath}_list_{i}";
+                    float elementHeight = GetParameterFieldHeight(elementType, list[i], elementPath);
+                    var elementRect = new Rect(rect.x + 20, currentY, rect.width - 20, elementHeight);
+                    var newValue = DrawParameterFieldInternal(elementRect, $"Element {i}", list[i], elementType, elementPath);
+                    list[i] = newValue;
+                    currentY += elementHeight + Spacing;
+                }
+            }
+
+            return list;
+        }
+
+        private object DrawDictionaryField(Rect rect, string label, object value, Type dictionaryType, string parameterPath)
+        {
+            var genericArgs = dictionaryType.GetGenericArguments();
+            var keyType = genericArgs[0];
+            var valueType = genericArgs[1];
+            IDictionary dictionary = value as IDictionary;
+
+            if (dictionary == null)
+            {
+                dictionary = Activator.CreateInstance(dictionaryType) as IDictionary;
+            }
+
+            string foldoutKey = parameterPath + "_dict";
+            if (!foldoutStates.ContainsKey(foldoutKey))
+                foldoutStates[foldoutKey] = false;
+
+            var foldoutRect = new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight);
+            foldoutStates[foldoutKey] = EditorGUI.Foldout(foldoutRect, foldoutStates[foldoutKey], $"{label} Dictionary<{keyType.Name}, {valueType.Name}> [{dictionary.Count}]");
+
+            float currentY = rect.y + EditorGUIUtility.singleLineHeight + Spacing;
+
+            if (foldoutStates[foldoutKey])
+            {
+                var controlsRect = new Rect(rect.x + 20, currentY, rect.width - 20, EditorGUIUtility.singleLineHeight);
+                var sizeRect = new Rect(controlsRect.x, controlsRect.y, controlsRect.width - 70, controlsRect.height);
+                var addRect = new Rect(controlsRect.x + controlsRect.width - 65, controlsRect.y, 30, controlsRect.height);
+                var removeRect = new Rect(controlsRect.x + controlsRect.width - 30, controlsRect.y, 30, controlsRect.height);
+
+                int newSize = EditorGUI.IntField(sizeRect, "Size", dictionary.Count);
+                if (newSize != dictionary.Count && newSize >= 0)
+                {
+                    while (dictionary.Count > newSize)
+                    {
+                        var keys = dictionary.Keys.Cast<object>().ToList();
+                        if (keys.Count == 0) break;
+                        dictionary.Remove(keys[keys.Count - 1]);
+                    }
+
+                    while (dictionary.Count < newSize)
+                    {
+                        var newKey = CreateDefaultDictionaryKey(keyType, dictionary);
+                        if (newKey == null && !keyType.IsValueType) break;
+                        if (dictionary.Contains(newKey)) break;
+                        dictionary.Add(newKey, GetDefaultValue(valueType));
+                    }
+                }
+
+                if (GUI.Button(addRect, "+"))
+                {
+                    var newKey = CreateDefaultDictionaryKey(keyType, dictionary);
+                    if (newKey != null || keyType.IsValueType)
+                    {
+                        if (!dictionary.Contains(newKey))
+                        {
+                            dictionary.Add(newKey, GetDefaultValue(valueType));
+                        }
+                    }
+                }
+
+                if (GUI.Button(removeRect, "-") && dictionary.Count > 0)
+                {
+                    var keys = dictionary.Keys.Cast<object>().ToList();
+                    dictionary.Remove(keys[keys.Count - 1]);
+                }
+
+                currentY += EditorGUIUtility.singleLineHeight + Spacing;
+
+                var keySnapshot = dictionary.Keys.Cast<object>().ToList();
+                for (int i = 0; i < keySnapshot.Count; i++)
+                {
+                    var oldKey = keySnapshot[i];
+                    var oldValue = dictionary[oldKey];
+
+                    string entryPath = $"{parameterPath}_dict_{i}";
+                    float keyHeight = GetParameterFieldHeight(keyType, oldKey, entryPath + "_key");
+                    var keyRect = new Rect(rect.x + 20, currentY, rect.width - 20, keyHeight);
+                    var newKey = DrawParameterFieldInternal(keyRect, $"Key {i}", oldKey, keyType, entryPath + "_key");
+                    currentY += keyHeight + Spacing;
+
+                    float valueHeight = GetParameterFieldHeight(valueType, oldValue, entryPath + "_value");
+                    var valueRect = new Rect(rect.x + 20, currentY, rect.width - 20, valueHeight);
+                    var newValue = DrawParameterFieldInternal(valueRect, $"Value {i}", oldValue, valueType, entryPath + "_value");
+                    currentY += valueHeight + Spacing;
+
+                    bool keyChanged = !Equals(newKey, oldKey);
+                    if (keyChanged)
+                    {
+                        if (newKey == null && !keyType.IsValueType)
+                        {
+                            dictionary[oldKey] = newValue;
+                            continue;
+                        }
+
+                        if (dictionary.Contains(newKey))
+                        {
+                            dictionary[oldKey] = newValue;
+                            continue;
+                        }
+
+                        dictionary.Remove(oldKey);
+                        dictionary[newKey] = newValue;
+                    }
+                    else
+                    {
+                        dictionary[oldKey] = newValue;
+                    }
+                }
+            }
+
+            return dictionary;
+        }
+
+        private object CreateDefaultDictionaryKey(Type keyType, IDictionary dictionary)
+        {
+            if (keyType == typeof(string))
+            {
+                int index = 1;
+                string candidate;
+                do
+                {
+                    candidate = $"Key{index}";
+                    index++;
+                } while (dictionary.Contains(candidate));
+
+                return candidate;
+            }
+
+            if (keyType == typeof(int))
+            {
+                int candidate = 0;
+                while (dictionary.Contains(candidate))
+                {
+                    candidate++;
+                }
+
+                return candidate;
+            }
+
+            if (keyType.IsEnum)
+            {
+                foreach (var enumValue in Enum.GetValues(keyType))
+                {
+                    if (!dictionary.Contains(enumValue))
+                    {
+                        return enumValue;
+                    }
+                }
+
+                return null;
+            }
+
+            var defaultKey = GetDefaultValue(keyType);
+            return dictionary.Contains(defaultKey) ? null : defaultKey;
+        }
         
         private object DrawComplexTypeField(Rect rect, string label, object value, Type type, string parameterPath)
         {
@@ -383,6 +627,20 @@ namespace MethodInvoker
                 {
                     var nullRect = new Rect(rect.x + labelWidth, currentY, rect.width - labelWidth, EditorGUIUtility.singleLineHeight);
                     EditorGUI.LabelField(nullRect, "No public constructors");
+                    return null;
+                }
+                
+                // Check if all constructors have recursive parameters
+                bool allConstructorsRecursive = constructors.All(ctor =>
+                {
+                    var parameters = ctor.GetParameters();
+                    return parameters.Length > 0 && parameters.Any(p => p.ParameterType == type || p.ParameterType == type.MakeByRefType());
+                });
+                
+                if (allConstructorsRecursive)
+                {
+                    var nullRect = new Rect(rect.x + labelWidth, currentY, rect.width - labelWidth, EditorGUIUtility.singleLineHeight);
+                    EditorGUI.LabelField(nullRect, "(Recursive constructor - cannot instantiate)");
                     return null;
                 }
                 
@@ -513,6 +771,28 @@ namespace MethodInvoker
             {
                 return Activator.CreateInstance(type);
             }
+            
+            // For reference types, try to create instance with parameterless constructor
+            try
+            {
+                // Check if type has a parameterless constructor
+                var constructor = type.GetConstructor(
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+                    
+                if (constructor != null)
+                {
+                    return Activator.CreateInstance(type);
+                }
+            }
+            catch (Exception ex)
+            {
+                // If creation fails (e.g., recursive constructor), log and return null
+                Debug.LogWarning($"Cannot create default instance of type {type.Name}: {ex.Message}");
+            }
+            
             return null;
         }
         
@@ -554,6 +834,60 @@ namespace MethodInvoker
                     }
                 }
                 
+                return height;
+            }
+
+            // List<T>
+            if (IsListType(type))
+            {
+                float height = EditorGUIUtility.singleLineHeight;
+                string foldoutKey = parameterPath + "_list";
+
+                if (foldoutStates.ContainsKey(foldoutKey) && foldoutStates[foldoutKey])
+                {
+                    height += EditorGUIUtility.singleLineHeight + Spacing;
+
+                    var list = value as IList;
+                    if (list != null)
+                    {
+                        Type elementType = type.GetGenericArguments()[0];
+                        for (int i = 0; i < list.Count; i++)
+                        {
+                            height += GetParameterFieldHeight(elementType, list[i], $"{parameterPath}_list_{i}") + Spacing;
+                        }
+                    }
+                }
+
+                return height;
+            }
+
+            // Dictionary<TKey, TValue>
+            if (IsDictionaryType(type))
+            {
+                float height = EditorGUIUtility.singleLineHeight;
+                string foldoutKey = parameterPath + "_dict";
+
+                if (foldoutStates.ContainsKey(foldoutKey) && foldoutStates[foldoutKey])
+                {
+                    height += EditorGUIUtility.singleLineHeight + Spacing;
+
+                    var dictionary = value as IDictionary;
+                    if (dictionary != null)
+                    {
+                        var keyType = type.GetGenericArguments()[0];
+                        var valueType = type.GetGenericArguments()[1];
+                        var keySnapshot = dictionary.Keys.Cast<object>().ToList();
+
+                        for (int i = 0; i < keySnapshot.Count; i++)
+                        {
+                            var key = keySnapshot[i];
+                            var dictValue = dictionary[key];
+                            height += GetParameterFieldHeight(keyType, key, $"{parameterPath}_dict_{i}_key") + Spacing;
+                            height += GetParameterFieldHeight(valueType, dictValue, $"{parameterPath}_dict_{i}_value") + Spacing;
+                        }
+                    }
+                }
+
                 return height;
             }
             
