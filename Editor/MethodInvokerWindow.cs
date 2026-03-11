@@ -38,6 +38,8 @@ namespace MethodInvoker
         private SerializedObject serializedObject;
         private SerializedProperty containerProperty;
         private bool showPrivateMethods = false;
+        [SerializeField]
+        private bool lockTargetSelection = false;
 
         // State management for foldouts and constructor selection
         private static Dictionary<string, bool> foldoutStates = new Dictionary<string, bool>();
@@ -62,6 +64,7 @@ namespace MethodInvoker
 
             serializedObject = new SerializedObject(this);
             containerProperty = serializedObject.FindProperty("container");
+            UpdateWindowTitle();
 
             // Initialize with current selection
             OnSelectionChanged();
@@ -81,6 +84,8 @@ namespace MethodInvoker
                 containerProperty = serializedObject.FindProperty("container");
             }
 
+            EnsureTargetIsAlive();
+
             serializedObject.Update();
 
             // Sync target with container
@@ -90,6 +95,33 @@ namespace MethodInvoker
             }
 
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+
+            // Target lock controls
+            GUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Space(3);
+            GUILayout.BeginHorizontal();
+
+            EditorGUI.BeginChangeCheck();
+            lockTargetSelection = EditorGUILayout.ToggleLeft("Lock Target", lockTargetSelection, GUILayout.Width(100));
+            if (EditorGUI.EndChangeCheck())
+            {
+                UpdateWindowTitle();
+                if (!lockTargetSelection)
+                {
+                    // Unlock should immediately follow current editor selection
+                    SyncToSelection();
+                }
+            }
+
+            GUILayout.FlexibleSpace();
+            GUI.enabled = false;
+            EditorGUILayout.ObjectField(target, typeof(GameObject), true, GUILayout.MinWidth(120));
+            GUI.enabled = true;
+
+            GUILayout.EndHorizontal();
+            GUILayout.Space(3);
+            GUILayout.EndVertical();
+            GUILayout.Space(6);
 
             // If no target selected, show hint message
             if (target == null)
@@ -865,47 +897,105 @@ namespace MethodInvoker
 
         private void OnSelectionChanged()
         {
+            EnsureTargetIsAlive();
+
+            if (lockTargetSelection)
+            {
+                return;
+            }
+
             GameObject selectedObject = Selection.activeGameObject;
 
+            SyncToSelection(selectedObject);
+        }
+
+        private void SyncToSelection(bool force = false)
+        {
+            SyncToSelection(Selection.activeGameObject, force);
+        }
+
+        private void SyncToSelection(GameObject selectedObject, bool force = false)
+        {
             // Update target (can be null)
-            if (selectedObject != target)
+            if (!force && selectedObject == target)
             {
-                target = selectedObject;
-
-                if (target != null)
-                {
-                    if (container == null)
-                        container = new MethodContainer(target);
-                    else
-                        container.targetGameObject = target;
-
-                    container.showPrivateMethods = showPrivateMethods;
-                    container.RefreshEntries();
-                }
-                else
-                {
-                    // Clear container when no selection
-                    if (container != null)
-                    {
-                        container.targetGameObject = null;
-                        container.methodEntries.Clear();
-                    }
-                }
-
-                if (serializedObject != null)
-                    serializedObject.Update();
-
-                Repaint();
+                return;
             }
+
+            target = selectedObject;
+
+            if (target != null)
+            {
+                if (container == null)
+                    container = new MethodContainer(target);
+                else
+                    container.targetGameObject = target;
+
+                container.showPrivateMethods = showPrivateMethods;
+                container.RefreshEntries();
+            }
+            else
+            {
+                // Clear container when no selection
+                if (container != null)
+                {
+                    container.targetGameObject = null;
+                    container.methodEntries.Clear();
+                }
+            }
+
+            if (serializedObject != null)
+                serializedObject.Update();
+
+            Repaint();
+        }
+
+        private void EnsureTargetIsAlive()
+        {
+            if (target != null)
+            {
+                return;
+            }
+
+            if (container == null)
+            {
+                return;
+            }
+
+            if (container.targetGameObject == null && (container.methodEntries == null || container.methodEntries.Count == 0))
+            {
+                return;
+            }
+
+            container.targetGameObject = null;
+            if (container.methodEntries != null)
+            {
+                container.methodEntries.Clear();
+            }
+
+            target = null;
+            if (serializedObject != null)
+            {
+                serializedObject.Update();
+            }
+        }
+
+        private void UpdateWindowTitle()
+        {
+            titleContent = new GUIContent(lockTargetSelection ? "Method Invoker (Locked)" : "Method Invoker");
         }
 
         private void OnPlayModeStateChanged(PlayModeStateChange change)
         {
             if (change == PlayModeStateChange.EnteredEditMode)
             {
+                EnsureTargetIsAlive();
                 if (container != null)
                 {
-                    container.RefreshEntries();
+                    if (container.targetGameObject != null)
+                    {
+                        container.RefreshEntries();
+                    }
                     Repaint();
                 }
             }
