@@ -19,41 +19,41 @@ namespace MethodInvoker
     [CustomPropertyDrawer(typeof(MethodEntry))]
     public class MethodEntryDrawer : PropertyDrawer
     {
-    #region Private Variables
+        #region Private Variables
 
         private const float ButtonHeight = 22f;
         private const float Spacing = 2f;
-        
+
         // State management for complex types and arrays
         private static readonly System.Collections.Generic.Dictionary<string, bool> foldoutStates = new System.Collections.Generic.Dictionary<string, bool>();
         private static readonly System.Collections.Generic.Dictionary<string, int> constructorSelectionIndices = new System.Collections.Generic.Dictionary<string, int>();
         private static readonly System.Collections.Generic.Dictionary<string, object[]> constructorParameterValues = new System.Collections.Generic.Dictionary<string, object[]>();
 
-    #endregion
+        #endregion
 
-    #region Public Methods
+        #region Public Methods
 
         public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
         {
             var methodEntry = GetMethodEntry(property);
             if (methodEntry == null) return EditorGUIUtility.singleLineHeight;
-            
+
             MethodInfo method = methodEntry.Delegate?.Method ?? methodEntry.DelegateInfo.Method;
             if (method == null) return EditorGUIUtility.singleLineHeight;
 
             var parameters = method.GetParameters();
             float height = EditorGUIUtility.singleLineHeight * 2 + Spacing * 3; // Box + method name
-            
+
             // Parameters - calculate dynamic heights
             for (int i = 0; i < parameters.Length; i++)
             {
                 string parameterPath = $"{property.propertyPath}_param_{i}";
-                object paramValue = (methodEntry.ParameterValues != null && i < methodEntry.ParameterValues.Length) 
-                    ? methodEntry.ParameterValues[i] 
+                object paramValue = (methodEntry.ParameterValues != null && i < methodEntry.ParameterValues.Length)
+                    ? methodEntry.ParameterValues[i]
                     : null;
                 height += GetParameterFieldHeight(parameters[i].ParameterType, paramValue, parameterPath) + Spacing;
             }
-            
+
             // Invoke button
             height += ButtonHeight + Spacing * 2;
 
@@ -63,19 +63,19 @@ namespace MethodInvoker
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
         {
             var methodEntry = GetMethodEntry(property);
-            
+
             Debug.Log($"[MethodEntryDrawer] OnGUI called, methodEntry={(methodEntry != null ? "not null" : "NULL")}");
-            
+
             // Debug: Draw something even if methodEntry is null
             if (methodEntry == null)
             {
                 EditorGUI.LabelField(position, "MethodEntry is NULL", EditorStyles.miniLabel);
                 return;
             }
-            
+
             MethodInfo method = methodEntry.Delegate?.Method ?? methodEntry.DelegateInfo.Method;
             Debug.Log($"[MethodEntryDrawer] Method={(method != null ? method.Name : "NULL")}, ParamCount={method?.GetParameters().Length ?? 0}");
-            
+
             if (method == null)
             {
                 EditorGUI.LabelField(position, "Method is NULL", EditorStyles.miniLabel);
@@ -97,7 +97,7 @@ namespace MethodInvoker
 
             // Draw parameters
             var parameters = method.GetParameters();
-            
+
             // Initialize ParameterValues if needed
             if (methodEntry.ParameterValues == null || methodEntry.ParameterValues.Length != parameters.Length)
             {
@@ -105,7 +105,7 @@ namespace MethodInvoker
                          $"was null={methodEntry.ParameterValues == null}, " +
                          $"expected length={parameters.Length}, " +
                          $"actual length={methodEntry.ParameterValues?.Length ?? 0}");
-                
+
                 methodEntry.ParameterValues = new object[parameters.Length];
                 for (int j = 0; j < parameters.Length; j++)
                 {
@@ -116,7 +116,7 @@ namespace MethodInvoker
                 }
                 EditorUtility.SetDirty(property.serializedObject.targetObject);
             }
-            
+
             for (int i = 0; i < parameters.Length; i++)
             {
                 var param = parameters[i];
@@ -146,9 +146,9 @@ namespace MethodInvoker
             EditorGUI.EndProperty();
         }
 
-    #endregion
+        #endregion
 
-    #region Private Methods
+        #region Private Methods
 
         private MethodEntry GetMethodEntry(SerializedProperty property)
         {
@@ -156,29 +156,29 @@ namespace MethodInvoker
             {
                 var targetObject = property.serializedObject.targetObject;
                 var path = property.propertyPath;
-                
+
                 if (string.IsNullOrEmpty(path)) return null;
-                
+
                 object obj = targetObject;
                 var elements = path.Split('.');
-                
+
                 foreach (var element in elements)
                 {
                     if (obj == null) return null;
-                    
+
                     if (element.Contains("["))
                     {
                         var elementName = element.Substring(0, element.IndexOf("["));
                         var index = int.Parse(element.Substring(element.IndexOf("[") + 1, element.IndexOf("]") - element.IndexOf("[") - 1));
                         var field = obj.GetType().GetField(elementName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                         if (field == null) return null;
-                        
+
                         // Skip unsupported field types (Dictionary, etc.)
                         if (IsUnsupportedType(field.FieldType))
                         {
                             return null;
                         }
-                        
+
                         var list = field.GetValue(obj) as System.Collections.IList;
                         if (list == null || index >= list.Count) return null;
                         obj = list[index];
@@ -187,17 +187,17 @@ namespace MethodInvoker
                     {
                         var field = obj.GetType().GetField(element, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                         if (field == null) return null;
-                        
+
                         // Skip unsupported field types (Dictionary, etc.)
                         if (IsUnsupportedType(field.FieldType))
                         {
                             return null;
                         }
-                        
+
                         obj = field.GetValue(obj);
                     }
                 }
-                
+
                 return obj as MethodEntry;
             }
             catch (Exception e)
@@ -207,7 +207,7 @@ namespace MethodInvoker
                 return null;
             }
         }
-        
+
         private bool IsUnsupportedType(Type type)
         {
             // Check for Dictionary and other problematic generic types
@@ -234,7 +234,7 @@ namespace MethodInvoker
         {
             return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>);
         }
-        
+
         private object DrawParameterFieldInternal(Rect rect, string label, object value, Type type, string parameterPath)
         {
             // Handle by-reference types (e.g., Vector3&)
@@ -242,7 +242,7 @@ namespace MethodInvoker
             {
                 type = type.GetElementType();
             }
-            
+
             // Check for arrays
             if (type.IsArray)
             {
@@ -260,7 +260,7 @@ namespace MethodInvoker
             {
                 return DrawDictionaryField(rect, label, value, type, parameterPath);
             }
-            
+
             // Check for complex types (classes/structs that aren't primitives or Unity types)
             if ((type.IsClass || (type.IsValueType && !type.IsPrimitive)) &&
                 type != typeof(string) && type != typeof(Vector2) && type != typeof(Vector3) &&
@@ -269,7 +269,7 @@ namespace MethodInvoker
             {
                 return DrawComplexTypeField(rect, label, value, type, parameterPath);
             }
-            
+
             // Default to simple field drawing
             return DrawParameterField(rect, label, value, type);
         }
@@ -317,52 +317,52 @@ namespace MethodInvoker
                 return value;
             }
         }
-        
+
         private object DrawArrayField(Rect rect, string label, object value, Type arrayType, string parameterPath)
         {
             Type elementType = arrayType.GetElementType();
             Array array = value as Array;
-            
+
             // Create array if null
             if (array == null)
             {
                 array = Array.CreateInstance(elementType, 0);
             }
-            
+
             string foldoutKey = parameterPath + "_array";
             if (!foldoutStates.ContainsKey(foldoutKey))
                 foldoutStates[foldoutKey] = false;
-            
+
             // Foldout header
             var labelWidth = EditorGUIUtility.labelWidth;
             var foldoutRect = new Rect(rect.x, rect.y, labelWidth, EditorGUIUtility.singleLineHeight);
             foldoutStates[foldoutKey] = EditorGUI.Foldout(foldoutRect, foldoutStates[foldoutKey], $"{label} [{array.Length}]");
-            
+
             float currentY = rect.y + EditorGUIUtility.singleLineHeight + Spacing;
-            
+
             if (foldoutStates[foldoutKey])
             {
                 // Size field
                 var sizeRect = new Rect(rect.x + 20, currentY, rect.width - 20, EditorGUIUtility.singleLineHeight);
                 int newSize = EditorGUI.IntField(sizeRect, "Size", array.Length);
                 currentY += EditorGUIUtility.singleLineHeight + Spacing;
-                
+
                 if (newSize != array.Length && newSize >= 0)
                 {
                     // Resize array
                     Array newArray = Array.CreateInstance(elementType, newSize);
                     int copyLength = Math.Min(array.Length, newSize);
                     Array.Copy(array, newArray, copyLength);
-                    
+
                     // Initialize new elements with default values
                     for (int i = array.Length; i < newSize; i++)
                     {
                         newArray.SetValue(GetDefaultValue(elementType), i);
                     }
-                    
+
                     array = newArray;
                 }
-                
+
                 // Draw elements
                 for (int i = 0; i < array.Length; i++)
                 {
@@ -370,18 +370,18 @@ namespace MethodInvoker
                     float elementHeight = GetParameterFieldHeight(elementType, array.GetValue(i), elementPath);
                     var elementRect = new Rect(rect.x + 20, currentY, rect.width - 20, elementHeight);
                     var elementValue = array.GetValue(i);
-                    
+
                     EditorGUI.BeginChangeCheck();
                     var newValue = DrawParameterFieldInternal(elementRect, $"Element {i}", elementValue, elementType, elementPath);
                     if (EditorGUI.EndChangeCheck())
                     {
                         array.SetValue(newValue, i);
                     }
-                    
+
                     currentY += elementHeight + Spacing;
                 }
             }
-            
+
             return array;
         }
 
@@ -605,70 +605,70 @@ namespace MethodInvoker
             var defaultKey = GetDefaultValue(keyType);
             return dictionary.Contains(defaultKey) ? null : defaultKey;
         }
-        
+
         private object DrawComplexTypeField(Rect rect, string label, object value, Type type, string parameterPath)
         {
             string foldoutKey = parameterPath + "_complex";
             if (!foldoutStates.ContainsKey(foldoutKey))
                 foldoutStates[foldoutKey] = false;
-            
+
             float currentY = rect.y;
-            
+
             if (value == null)
             {
                 // Show '+' button and constructor dropdown
                 var labelWidth = EditorGUIUtility.labelWidth;
                 var labelRect = new Rect(rect.x, currentY, labelWidth, EditorGUIUtility.singleLineHeight);
                 EditorGUI.LabelField(labelRect, label);
-                
+
                 var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
-                
+
                 if (constructors.Length == 0)
                 {
                     var nullRect = new Rect(rect.x + labelWidth, currentY, rect.width - labelWidth, EditorGUIUtility.singleLineHeight);
                     EditorGUI.LabelField(nullRect, "No public constructors");
                     return null;
                 }
-                
+
                 // Check if all constructors have recursive parameters
                 bool allConstructorsRecursive = constructors.All(ctor =>
                 {
                     var parameters = ctor.GetParameters();
                     return parameters.Length > 0 && parameters.Any(p => p.ParameterType == type || p.ParameterType == type.MakeByRefType());
                 });
-                
+
                 if (allConstructorsRecursive)
                 {
                     var nullRect = new Rect(rect.x + labelWidth, currentY, rect.width - labelWidth, EditorGUIUtility.singleLineHeight);
                     EditorGUI.LabelField(nullRect, "(Recursive constructor - cannot instantiate)");
                     return null;
                 }
-                
+
                 string ctorKey = parameterPath + "_ctor";
                 if (!constructorSelectionIndices.ContainsKey(ctorKey))
                     constructorSelectionIndices[ctorKey] = 0;
-                
+
                 int selectedCtorIndex = constructorSelectionIndices[ctorKey];
                 if (selectedCtorIndex >= constructors.Length)
                     selectedCtorIndex = 0;
-                
+
                 var buttonWidth = 30f;
                 var buttonRect = new Rect(rect.x + labelWidth, currentY, buttonWidth, EditorGUIUtility.singleLineHeight);
-                
+
                 bool createInstance = GUI.Button(buttonRect, "+");
-                
+
                 if (constructors.Length > 1)
                 {
                     // Show constructor dropdown
                     var dropdownRect = new Rect(rect.x + labelWidth + buttonWidth + 5, currentY, rect.width - labelWidth - buttonWidth - 5, EditorGUIUtility.singleLineHeight);
-                    
+
                     string[] ctorNames = new string[constructors.Length];
                     for (int i = 0; i < constructors.Length; i++)
                     {
                         var parameters = constructors[i].GetParameters();
                         ctorNames[i] = $"Constructor ({string.Join(", ", parameters.Select(p => p.ParameterType.Name))})";
                     }
-                    
+
                     EditorGUI.BeginChangeCheck();
                     selectedCtorIndex = EditorGUI.Popup(dropdownRect, selectedCtorIndex, ctorNames);
                     if (EditorGUI.EndChangeCheck())
@@ -676,13 +676,13 @@ namespace MethodInvoker
                         constructorSelectionIndices[ctorKey] = selectedCtorIndex;
                     }
                 }
-                
+
                 currentY += EditorGUIUtility.singleLineHeight + Spacing;
-                
+
                 // Draw constructor parameters
                 var selectedCtor = constructors[selectedCtorIndex];
                 var ctorParams = selectedCtor.GetParameters();
-                
+
                 string ctorParamsKey = parameterPath + "_ctorparams";
                 if (!constructorParameterValues.ContainsKey(ctorParamsKey) || constructorParameterValues[ctorParamsKey].Length != ctorParams.Length)
                 {
@@ -692,23 +692,23 @@ namespace MethodInvoker
                         constructorParameterValues[ctorParamsKey][i] = GetDefaultValue(ctorParams[i].ParameterType);
                     }
                 }
-                
+
                 for (int i = 0; i < ctorParams.Length; i++)
                 {
                     string ctorParamPath = $"{parameterPath}_ctorparam_{i}";
                     float ctorParamHeight = GetParameterFieldHeight(ctorParams[i].ParameterType, constructorParameterValues[ctorParamsKey][i], ctorParamPath);
                     var paramRect = new Rect(rect.x + 20, currentY, rect.width - 20, ctorParamHeight);
-                    
+
                     EditorGUI.BeginChangeCheck();
                     var paramValue = DrawParameterFieldInternal(paramRect, ctorParams[i].Name, constructorParameterValues[ctorParamsKey][i], ctorParams[i].ParameterType, ctorParamPath);
                     if (EditorGUI.EndChangeCheck())
                     {
                         constructorParameterValues[ctorParamsKey][i] = paramValue;
                     }
-                    
+
                     currentY += ctorParamHeight + Spacing;
                 }
-                
+
                 if (createInstance)
                 {
                     try
@@ -728,35 +728,35 @@ namespace MethodInvoker
                 var labelWidth = EditorGUIUtility.labelWidth;
                 var foldoutRect = new Rect(rect.x, currentY, rect.width, EditorGUIUtility.singleLineHeight);
                 foldoutStates[foldoutKey] = EditorGUI.Foldout(foldoutRect, foldoutStates[foldoutKey], $"{label} ({type.Name})");
-                
+
                 currentY += EditorGUIUtility.singleLineHeight + Spacing;
-                
+
                 if (foldoutStates[foldoutKey])
                 {
                     var fields = GetSerializableFields(type);
-                    
+
                     foreach (var field in fields)
                     {
                         string fieldPath = $"{parameterPath}_field_{field.Name}";
                         var fieldValue = field.GetValue(value);
                         float fieldHeight = GetParameterFieldHeight(field.FieldType, fieldValue, fieldPath);
                         var fieldRect = new Rect(rect.x + 20, currentY, rect.width - 20, fieldHeight);
-                        
+
                         EditorGUI.BeginChangeCheck();
                         var newFieldValue = DrawParameterFieldInternal(fieldRect, field.Name, fieldValue, field.FieldType, fieldPath);
                         if (EditorGUI.EndChangeCheck())
                         {
                             field.SetValue(value, newFieldValue);
                         }
-                        
+
                         currentY += fieldHeight + Spacing;
                     }
                 }
             }
-            
+
             return value;
         }
-        
+
         private FieldInfo[] GetSerializableFields(Type type)
         {
             var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -764,14 +764,14 @@ namespace MethodInvoker
                 (f.IsPublic && !f.IsNotSerialized) ||
                 f.GetCustomAttribute<SerializeField>() != null).ToArray();
         }
-        
+
         private object GetDefaultValue(Type type)
         {
             if (type.IsValueType)
             {
                 return Activator.CreateInstance(type);
             }
-            
+
             // For reference types, try to create instance with parameterless constructor
             try
             {
@@ -781,7 +781,7 @@ namespace MethodInvoker
                     null,
                     Type.EmptyTypes,
                     null);
-                    
+
                 if (constructor != null)
                 {
                     return Activator.CreateInstance(type);
@@ -792,10 +792,10 @@ namespace MethodInvoker
                 // If creation fails (e.g., recursive constructor), log and return null
                 Debug.LogWarning($"Cannot create default instance of type {type.Name}: {ex.Message}");
             }
-            
+
             return null;
         }
-        
+
         private float GetParameterFieldHeight(Type type, object value, string parameterPath)
         {
             // Handle by-reference types
@@ -803,7 +803,7 @@ namespace MethodInvoker
             {
                 type = type.GetElementType();
             }
-            
+
             // Primitive and Unity built-in types
             if (type == typeof(int) || type == typeof(float) || type == typeof(double) ||
                 type == typeof(string) || type == typeof(bool) ||
@@ -812,12 +812,12 @@ namespace MethodInvoker
             {
                 return EditorGUIUtility.singleLineHeight;
             }
-            
+
             // Arrays
             if (type.IsArray)
             {
                 float height = EditorGUIUtility.singleLineHeight; // Foldout header
-                
+
                 string foldoutKey = parameterPath + "_array";
                 if (foldoutStates.ContainsKey(foldoutKey) && foldoutStates[foldoutKey])
                 {
@@ -825,7 +825,7 @@ namespace MethodInvoker
                     if (array != null)
                     {
                         height += EditorGUIUtility.singleLineHeight + Spacing; // Size field
-                        
+
                         Type elementType = type.GetElementType();
                         for (int i = 0; i < array.Length; i++)
                         {
@@ -833,7 +833,7 @@ namespace MethodInvoker
                         }
                     }
                 }
-                
+
                 return height;
             }
 
@@ -890,12 +890,12 @@ namespace MethodInvoker
 
                 return height;
             }
-            
+
             // Complex types (classes/structs)
             if (type.IsClass || (type.IsValueType && !type.IsPrimitive))
             {
                 float height = EditorGUIUtility.singleLineHeight; // Label or foldout
-                
+
                 if (value == null)
                 {
                     // '+' button and constructor dropdown
@@ -906,7 +906,7 @@ namespace MethodInvoker
                         int selectedCtorIndex = constructorSelectionIndices.ContainsKey(ctorKey) ? constructorSelectionIndices[ctorKey] : 0;
                         if (selectedCtorIndex >= constructors.Length)
                             selectedCtorIndex = 0;
-                        
+
                         var ctorParams = constructors[selectedCtorIndex].GetParameters();
                         for (int i = 0; i < ctorParams.Length; i++)
                         {
@@ -931,14 +931,14 @@ namespace MethodInvoker
                         }
                     }
                 }
-                
+
                 return height;
             }
-            
+
             return EditorGUIUtility.singleLineHeight;
         }
 
-    #endregion
+        #endregion
     }
 #endif
 }
