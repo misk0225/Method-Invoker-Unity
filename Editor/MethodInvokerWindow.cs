@@ -662,38 +662,25 @@ namespace MethodInvoker
             string foldoutKey = parameterPath + "_complex";
             if (!foldoutStates.ContainsKey(foldoutKey))
                 foldoutStates[foldoutKey] = false;
+            bool isStructType = type.IsValueType && !type.IsPrimitive && !type.IsEnum;
+            bool showConstructorSection = value == null || isStructType;
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
-            if (value == null)
+            if (!TryGetUsableConstructors(type, out var constructors) && value == null)
             {
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField(type.Name, GUILayout.Width(120));
+                EditorGUILayout.LabelField("No usable public constructors");
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+                return null;
+            }
 
-                var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
-
-                if (constructors.Length == 0)
-                {
-                    EditorGUILayout.LabelField("No public constructors");
-                    EditorGUILayout.EndHorizontal();
-                    EditorGUILayout.EndVertical();
-                    return null;
-                }
-
-                // Check if all constructors have recursive parameters
-                bool allConstructorsRecursive = constructors.All(ctor =>
-                {
-                    var parameters = ctor.GetParameters();
-                    return parameters.Length > 0 && parameters.Any(p => p.ParameterType == type || p.ParameterType == type.MakeByRefType());
-                });
-
-                if (allConstructorsRecursive)
-                {
-                    EditorGUILayout.LabelField("(Recursive constructor - cannot instantiate)");
-                    EditorGUILayout.EndHorizontal();
-                    EditorGUILayout.EndVertical();
-                    return null;
-                }
+            if (showConstructorSection && constructors != null && constructors.Length > 0)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(type.Name, GUILayout.Width(120));
 
                 string ctorKey = parameterPath + "_ctor";
                 if (!constructorSelectionIndices.ContainsKey(ctorKey))
@@ -703,7 +690,7 @@ namespace MethodInvoker
                 if (selectedCtorIndex >= constructors.Length)
                     selectedCtorIndex = 0;
 
-                bool createInstance = GUILayout.Button("+", GUILayout.Width(30));
+                bool createInstance = GUILayout.Button(value == null ? "+" : "Recreate", GUILayout.Width(80));
 
                 if (constructors.Length > 1)
                 {
@@ -762,33 +749,75 @@ namespace MethodInvoker
                         Debug.LogError($"Failed to create instance: {e.Message}");
                     }
                 }
-            }
-            else
-            {
-                foldoutStates[foldoutKey] = EditorGUILayout.Foldout(foldoutStates[foldoutKey], $"{type.Name}");
 
-                if (foldoutStates[foldoutKey])
+                if (value == null)
                 {
-                    EditorGUI.indentLevel++;
-                    var fields = GetSerializableFields(type);
+                    EditorGUILayout.EndVertical();
+                    return null;
+                }
+            }
 
-                    foreach (var field in fields)
+            foldoutStates[foldoutKey] = EditorGUILayout.Foldout(foldoutStates[foldoutKey], $"{type.Name}");
+
+            if (foldoutStates[foldoutKey])
+            {
+                EditorGUI.indentLevel++;
+                var fields = GetSerializableFields(type);
+
+                foreach (var field in fields)
+                {
+                    string fieldPath = $"{parameterPath}_field_{field.Name}";
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField(field.Name, GUILayout.Width(120));
+                    var fieldValue = field.GetValue(value);
+                    var newFieldValue = DrawParameterField(fieldValue, field.FieldType, fieldPath);
+                    field.SetValue(value, newFieldValue);
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                if (isStructType)
+                {
+                    var properties = GetEditableProperties(type);
+                    foreach (var property in properties)
                     {
-                        string fieldPath = $"{parameterPath}_field_{field.Name}";
+                        string propertyPath = $"{parameterPath}_prop_{property.Name}";
                         EditorGUILayout.BeginHorizontal();
-                        EditorGUILayout.LabelField(field.Name, GUILayout.Width(120));
-                        var fieldValue = field.GetValue(value);
-                        var newFieldValue = DrawParameterField(fieldValue, field.FieldType, fieldPath);
-                        field.SetValue(value, newFieldValue);
+                        EditorGUILayout.LabelField(property.Name, GUILayout.Width(120));
+                        var propertyValue = property.GetValue(value);
+                        var newPropertyValue = DrawParameterField(propertyValue, property.PropertyType, propertyPath);
+                        property.SetValue(value, newPropertyValue);
                         EditorGUILayout.EndHorizontal();
                     }
-
-                    EditorGUI.indentLevel--;
                 }
+
+                EditorGUI.indentLevel--;
             }
 
             EditorGUILayout.EndVertical();
             return value;
+        }
+
+        private static bool TryGetUsableConstructors(Type type, out ConstructorInfo[] constructors)
+        {
+            constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+                .Where(ctor =>
+                {
+                    var parameters = ctor.GetParameters();
+                    return !(parameters.Length > 0 && parameters.Any(p => p.ParameterType == type || p.ParameterType == type.MakeByRefType()));
+                })
+                .ToArray();
+
+            return constructors.Length > 0;
+        }
+
+        private static PropertyInfo[] GetEditableProperties(Type type)
+        {
+            return type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p =>
+                    p.CanRead &&
+                    p.CanWrite &&
+                    p.GetIndexParameters().Length == 0)
+                .ToArray();
         }
 
         private FieldInfo[] GetSerializableFields(Type type)

@@ -95,6 +95,7 @@ public class TestMethodScript : MonoBehaviour
     public List<TestCustomClass> lastCustomClassList = null;
     public Dictionary<string, int> lastStringIntDictionary = null;
     public Dictionary<string, TestCustomClass> lastComplexDictionary = null;
+    public Vector2Int lastVector2IntValue = Vector2Int.zero;
 
     public void NoParameterMethod()
     {
@@ -217,6 +218,11 @@ public class TestMethodScript : MonoBehaviour
     public void ComplexDictionaryParameterMethod(Dictionary<string, TestCustomClass> values)
     {
         lastComplexDictionary = values;
+    }
+
+    public void Vector2IntParameterMethod(Vector2Int value)
+    {
+        lastVector2IntValue = value;
     }
 
     public void NullableIntParameterMethod(int? value)

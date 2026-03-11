@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 using MethodInvoker;
@@ -881,6 +883,42 @@ namespace MethodInvoker.Tests
             Assert.AreEqual("beta", deserializedDictionary["right"].stringField, "Nested string field should be preserved");
         }
 
+        [Test]
+        public void Test_Vector2IntParameter_CanInvoke()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var container = new MethodContainer(testObject);
+
+            var method = container.methodEntries.Find(m =>
+                m.Delegate?.Method?.Name == "Vector2IntParameterMethod");
+
+            Assert.IsNotNull(method, "Should find Vector2IntParameterMethod");
+
+            var testValue = new Vector2Int(7, -3);
+            method.ParameterValues[0] = testValue;
+            method.Invoke();
+
+            Assert.AreEqual(testValue, script.lastVector2IntValue, "Vector2Int should be passed correctly");
+        }
+
+        [Test]
+        public void Test_Vector2IntSerialization_PreservesValue()
+        {
+            var script = testObject.AddComponent<TestMethodScript>();
+            var del = new Action<Vector2Int>(script.Vector2IntParameterMethod);
+            var delInfo = new DelegateInfo { Method = del.Method, Target = script };
+            var entry = new MethodEntry(del, delInfo);
+
+            entry.ParameterValues[0] = new Vector2Int(123, -456);
+
+            entry.OnBeforeSerialize();
+            entry.OnAfterDeserialize();
+
+            Assert.IsNotNull(entry.ParameterValues, "Parameters should be restored");
+            Assert.IsInstanceOf<Vector2Int>(entry.ParameterValues[0], "Should preserve Vector2Int type");
+            Assert.AreEqual(new Vector2Int(123, -456), (Vector2Int)entry.ParameterValues[0], "Vector2Int value should be preserved");
+        }
+
         // ====== 新增測試：錯誤處理 ======
 
         [Test]
@@ -1172,6 +1210,79 @@ namespace MethodInvoker.Tests
 
             // Should be able to invoke with null parameter without crashing
             Assert.DoesNotThrow(() => method.Invoke(), "Should invoke method with null parameter without crashing");
+        }
+
+        [Test]
+        public void Test_MethodEntryDrawer_TryGetUsableConstructors_Vector2Int_HasSingleCtor()
+        {
+            var result = InvokeTryGetUsableConstructors(typeof(MethodEntryDrawer), typeof(Vector2Int), out var constructors);
+
+            Assert.IsTrue(result, "Vector2Int should have usable constructor");
+            Assert.IsNotNull(constructors, "Constructors should not be null");
+            Assert.AreEqual(1, constructors.Length, "Vector2Int should expose one public constructor");
+            Assert.AreEqual(2, constructors[0].GetParameters().Length, "Vector2Int constructor should have x/y parameters");
+        }
+
+        [Test]
+        public void Test_MethodInvokerWindow_TryGetUsableConstructors_Vector2Int_HasSingleCtor()
+        {
+            var result = InvokeTryGetUsableConstructors(typeof(MethodInvokerWindow), typeof(Vector2Int), out var constructors);
+
+            Assert.IsTrue(result, "Vector2Int should have usable constructor");
+            Assert.IsNotNull(constructors, "Constructors should not be null");
+            Assert.AreEqual(1, constructors.Length, "Vector2Int should expose one public constructor");
+        }
+
+        [Test]
+        public void Test_MethodEntryDrawer_GetEditableProperties_Vector2Int_HasXAndY()
+        {
+            var properties = InvokeGetEditableProperties(typeof(MethodEntryDrawer), typeof(Vector2Int));
+            var propertyNames = properties.Select(p => p.Name).ToArray();
+
+            Assert.Contains("x", propertyNames, "Vector2Int should expose x property");
+            Assert.Contains("y", propertyNames, "Vector2Int should expose y property");
+        }
+
+        [Test]
+        public void Test_MethodInvokerWindow_GetEditableProperties_Vector2Int_HasXAndY()
+        {
+            var properties = InvokeGetEditableProperties(typeof(MethodInvokerWindow), typeof(Vector2Int));
+            var propertyNames = properties.Select(p => p.Name).ToArray();
+
+            Assert.Contains("x", propertyNames, "Vector2Int should expose x property");
+            Assert.Contains("y", propertyNames, "Vector2Int should expose y property");
+        }
+
+        [Test]
+        public void Test_TryGetUsableConstructors_RecursiveType_ReturnsFalse()
+        {
+            var drawerResult = InvokeTryGetUsableConstructors(typeof(MethodEntryDrawer), typeof(TestContructerRecursion), out var drawerConstructors);
+            var windowResult = InvokeTryGetUsableConstructors(typeof(MethodInvokerWindow), typeof(TestContructerRecursion), out var windowConstructors);
+
+            Assert.IsFalse(drawerResult, "Recursive-only constructor type should have no usable constructors in drawer");
+            Assert.IsFalse(windowResult, "Recursive-only constructor type should have no usable constructors in window");
+            Assert.IsNotNull(drawerConstructors, "Drawer constructor array should be initialized");
+            Assert.IsNotNull(windowConstructors, "Window constructor array should be initialized");
+            Assert.AreEqual(0, drawerConstructors.Length, "Drawer should filter recursive constructors");
+            Assert.AreEqual(0, windowConstructors.Length, "Window should filter recursive constructors");
+        }
+
+        private static bool InvokeTryGetUsableConstructors(Type ownerType, Type targetType, out ConstructorInfo[] constructors)
+        {
+            var method = ownerType.GetMethod("TryGetUsableConstructors", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.IsNotNull(method, $"{ownerType.Name} should implement TryGetUsableConstructors");
+
+            object[] args = { targetType, null };
+            var result = (bool)method.Invoke(null, args);
+            constructors = (ConstructorInfo[])args[1];
+            return result;
+        }
+
+        private static PropertyInfo[] InvokeGetEditableProperties(Type ownerType, Type targetType)
+        {
+            var method = ownerType.GetMethod("GetEditableProperties", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.IsNotNull(method, $"{ownerType.Name} should implement GetEditableProperties");
+            return (PropertyInfo[])method.Invoke(null, new object[] { targetType });
         }
     }
 }

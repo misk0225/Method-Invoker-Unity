@@ -80,6 +80,16 @@ namespace MethodInvoker
                 return;
             }
 
+            // Unity value types
+            if (type == typeof(Vector2Int))
+            {
+                writer.Write((byte)SerializationType.Vector2Int);
+                var vector = (Vector2Int)obj;
+                writer.Write(vector.x);
+                writer.Write(vector.y);
+                return;
+            }
+
             // Enum
             if (type.IsEnum)
             {
@@ -293,6 +303,13 @@ namespace MethodInvoker
             if (serializationType == SerializationType.String)
                 return reader.ReadString();
 
+            if (serializationType == SerializationType.Vector2Int)
+            {
+                int x = reader.ReadInt32();
+                int y = reader.ReadInt32();
+                return new Vector2Int(x, y);
+            }
+
             if (serializationType == SerializationType.Enum)
             {
                 var enumTypeName = reader.ReadString();
@@ -492,7 +509,8 @@ namespace MethodInvoker
             Enum = 17,
             ComplexType = 18,
             List = 19,
-            Dictionary = 20
+            Dictionary = 20,
+            Vector2Int = 21
         }
 
         #endregion
